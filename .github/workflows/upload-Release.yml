@@ -46,6 +46,11 @@ jobs:
           # Copy non-empty build packages from artifacts into release_assets
           find artifacts -type f -size +0c \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.7z" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg" \) -exec cp {} release_assets/ \; 2>/dev/null || true
 
+          # If any .deb is part of this release, ship the default config.json alongside it
+          if ls release_assets/*.deb >/dev/null 2>&1; then
+            cp config/config.json release_assets/config.json
+          fi
+
           # Remove any 0-byte files if present
           find release_assets -type f -size 0 -delete 2>/dev/null || true
 
