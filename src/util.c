@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
 
 char *util_read_first_line(const char *filepath, char *buf, size_t size) {
     if (!filepath || !buf || size == 0) return NULL;

@@ -6,9 +6,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <lmcons.h>
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+#else
 #include <unistd.h>
 #include <pwd.h>
 #include <sys/ioctl.h>
+#endif
 
 extern void config_init(void);
 extern int logo_load(const char *distro_id, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
@@ -42,11 +50,24 @@ extern void module_detect_display(char *out, size_t max_len);
 static void get_user_host_str(char *out, size_t size,
                                char *user_raw, size_t user_sz,
                                char *host_raw, size_t host_sz) {
+#ifdef _WIN32
+    DWORD u_len = (DWORD)user_sz;
+    if (!GetUserNameA(user_raw, &u_len)) {
+        const char *u_env = getenv("USERNAME");
+        snprintf(user_raw, user_sz, "%s", u_env ? u_env : "user");
+    }
+    DWORD h_len = (DWORD)host_sz;
+    if (!GetComputerNameA(host_raw, &h_len)) {
+        const char *h_env = getenv("COMPUTERNAME");
+        snprintf(host_raw, host_sz, "%s", h_env ? h_env : "localhost");
+    }
+#else
     struct passwd *pw = getpwuid(geteuid());
     if (pw) snprintf(user_raw, user_sz, "%s", pw->pw_name);
     else    snprintf(user_raw, user_sz, "user");
     if (gethostname(host_raw, (int)host_sz) != 0)
         snprintf(host_raw, host_sz, "localhost");
+#endif
 
     snprintf(out, size,
         COLOR_USER "%s" COLOR_RESET "@" COLOR_USER "%s" COLOR_RESET,
@@ -54,9 +75,17 @@ static void get_user_host_str(char *out, size_t size,
 }
 
 static int get_terminal_width(void) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        if (width > 0) return width;
+    }
+#else
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
         return (int)ws.ws_col;
+#endif
     const char *cols_env = getenv("COLUMNS");
     if (cols_env && cols_env[0] != '\0') {
         int c = atoi(cols_env);
@@ -66,6 +95,16 @@ static int get_terminal_width(void) {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+#endif
     config_init();
 
     /* CLI flags */

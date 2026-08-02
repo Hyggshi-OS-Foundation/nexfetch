@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#endif
 
 NexfetchConfig g_config = {
     .show_logo         = 1,

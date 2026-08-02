@@ -1,3 +1,5 @@
+#if defined(_WIN32)
+
 #include "platform.h"
 #include <stdio.h>
 
@@ -25,3 +27,6 @@ void platform_get_network(char *out, size_t size) { snprintf(out, size, "Unknown
 void platform_get_locale(char *out, size_t size) { snprintf(out, size, "en_US.UTF-8"); }
 void platform_get_swap(char *out, size_t size) { snprintf(out, size, "N/A"); }
 void platform_get_display(char *out, size_t size) { snprintf(out, size, "1920x1080"); }
+
+#endif
+

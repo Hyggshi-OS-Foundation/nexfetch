@@ -1,3 +1,5 @@
+#if defined(__linux__) || defined(__gnu_linux__)
+
 #include "platform.h"
 #include "util.h"
 #include <stdio.h>
@@ -49,3 +51,6 @@ void platform_get_os(char *out, size_t size, char *distro_id, size_t distro_id_s
         snprintf(distro_id, distro_id_size, "%s", id);
     }
 }
+
+#endif
+

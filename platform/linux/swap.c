@@ -1,3 +1,5 @@
+#if defined(__linux__) || defined(__gnu_linux__)
+
 #include "platform.h"
 #include "util.h"
 #include <stdio.h>
@@ -39,3 +41,6 @@ void platform_get_swap(char *out, size_t size) {
         snprintf(out, size, "%.2f GiB / %.2f GiB (%d%%)", used_gib, total_gib, pct);
     }
 }
+
+#endif
+
