@@ -1,0 +1,30 @@
+{
+  "show_logo": true,
+  "color_blocks": true,
+  "theme": "boxed",
+  "logo": "./logos/tux.txt",
+  "logo_width": 16,
+  "modules": [
+    "os",
+    "kernel",
+    "host",
+    "uptime",
+    "packages",
+    "display",
+    "shell",
+    "de",
+    "wm",
+    "terminal",
+    "cpu",
+    "gpu",
+    "memory",
+    "disk",
+    "swap",
+    "battery",
+    "network",
+    "theme",
+    "icons",
+    "font",
+    "locale"
+  ]
+}

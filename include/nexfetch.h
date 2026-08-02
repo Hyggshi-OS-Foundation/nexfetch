@@ -1,0 +1,36 @@
+#ifndef NEXFETCH_H
+#define NEXFETCH_H
+
+#include "module.h"
+#include "platform.h"
+#include "util.h"
+
+#define NEXFETCH_VERSION "1.0.0"
+#define MAX_MODULES 48
+#define MAX_VAL_LEN 512
+#define MAX_LOGO_LINES 32
+#define MAX_LOGO_LINE_LEN 2048   /* must fit full chafa-rendered lines (up to ~700 raw bytes) */
+#define LOGO_PADDING 3          /* gap columns between logo and info box */
+
+typedef struct NexfetchConfig {
+    int show_logo;
+    char custom_logo_path[512];   /* path from config.json "logo" field or --logo flag */
+    int  logo_is_image;           /* 1 = PNG/JPG/GIF → convert via chafa; 0 = .txt */
+    int  logo_width;              /* columns for chafa conversion (0 = auto 32) */
+    char distro_id[64];
+    int color_blocks;
+    char theme[64];               /* active presentation theme: "boxed", "classic", "modern" */
+} NexfetchConfig;
+
+extern NexfetchConfig g_config;
+
+/* ANSI color macros */
+#define COLOR_RESET    "\033[0m"
+#define COLOR_BOLD     "\033[1m"
+#define COLOR_KEY      "\033[1;34m"   /* Bold Blue   – key labels  */
+#define COLOR_VALUE    "\033[0;37m"   /* Light White – values      */
+#define COLOR_USER     "\033[1;32m"   /* Bold Green  – user@host   */
+#define COLOR_SEP      "\033[1;30m"   /* Dark Gray   – separator   */
+#define COLOR_TITLE    "\033[1;37m"   /* Bold White  – section     */
+
+#endif /* NEXFETCH_H */
