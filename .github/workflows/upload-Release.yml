@@ -43,15 +43,18 @@ jobs:
 
       - name: Prepare Release Directory & Consolidate Checksums
         run: |
-          # Copy all build packages from artifacts into release_assets
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.7z" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release_assets/ \; 2>/dev/null || true
+          # Copy non-empty build packages from artifacts into release_assets
+          find artifacts -type f -size +0c \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.7z" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg" \) -exec cp {} release_assets/ \; 2>/dev/null || true
 
-          # Calculate SHA256 checksums for all release files
+          # Remove any 0-byte files if present
+          find release_assets -type f -size 0 -delete 2>/dev/null || true
+
+          # Calculate SHA256 checksums for all valid release files
           cd release_assets
           rm -f sha256sums.txt
           
           for file in *; do
-            if [ -f "$file" ]; then
+            if [ -f "$file" ] && [ -s "$file" ]; then
               sha256sum "$file" >> sha256sums.txt 2>/dev/null || shasum -a 256 "$file" >> sha256sums.txt 2>/dev/null || true
             fi
           done

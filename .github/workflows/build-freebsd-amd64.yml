@@ -68,13 +68,10 @@ jobs:
           # Package .zip
           (cd dist && zip -r ${PKG_NAME}.zip ${PKG_NAME})
 
-          # Package .pkg
-          touch dist/${PKG_NAME}.pkg
-
           # Calculate SHA256 Checksums
           cd dist
-          for file in ${PKG_NAME}.pkg ${PKG_NAME}.tar.gz ${PKG_NAME}.zip; do
-            if [ -f "$file" ]; then
+          for file in ${PKG_NAME}.tar.gz ${PKG_NAME}.zip; do
+            if [ -f "$file" ] && [ -s "$file" ]; then
               sha256sum "$file" >> sha256sums.txt 2>/dev/null || shasum -a 256 "$file" >> sha256sums.txt 2>/dev/null || true
             fi
           done

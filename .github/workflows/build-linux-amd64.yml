@@ -83,13 +83,10 @@ jobs:
           EOF
           dpkg-deb --build ${DEB_DIR} dist/${PKG_NAME}.deb || true
 
-          # Package .rpm
-          touch dist/${PKG_NAME}.rpm
-
           # Calculate SHA256 Checksums
           cd dist
           for file in ${PKG_NAME}.deb ${PKG_NAME}.rpm ${PKG_NAME}.tar.gz ${PKG_NAME}.zip; do
-            if [ -f "$file" ]; then
+            if [ -f "$file" ] && [ -s "$file" ]; then
               sha256sum "$file" >> sha256sums.txt 2>/dev/null || shasum -a 256 "$file" >> sha256sums.txt 2>/dev/null || true
             fi
           done
