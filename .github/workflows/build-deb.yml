@@ -54,7 +54,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           make clean
-          dpkg-buildpackage -us -uc -b -aamd64
+          dpkg-buildpackage -us -uc -b -d -aamd64
           mkdir -p dist
           mv ../nexfetch_*.deb dist/ 2>/dev/null || true
           mv ../nexfetch_*.buildinfo dist/ 2>/dev/null || true
@@ -62,10 +62,13 @@ jobs:
 
       - name: Build for arm64
         if: matrix.arch == 'arm64'
+        env:
+          CC: aarch64-linux-gnu-gcc
+          DEB_HOST_ARCH: arm64
+          DEB_BUILD_OPTIONS: nocheck
         run: |
           make clean
-          export CC=aarch64-linux-gnu-gcc
-          dpkg-buildpackage -us -uc -b -aarm64
+          dpkg-buildpackage -us -uc -b -d -aarm64
           mkdir -p dist
           mv ../nexfetch_*.deb dist/ 2>/dev/null || true
           mv ../nexfetch_*.buildinfo dist/ 2>/dev/null || true

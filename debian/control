@@ -2,7 +2,7 @@ Source: nexfetch
 Section: utils
 Priority: optional
 Maintainer: Hyggshi OS Foundation <hyggshidev@gmail.com>
-Build-Depends: debhelper-compat (= 13), gcc, make
+Build-Depends: debhelper-compat (= 13), gcc:any, make
 Standards-Version: 4.5.1
 Homepage: https://github.com/Hyggshi-OS-Foundation/nexfetch
 
