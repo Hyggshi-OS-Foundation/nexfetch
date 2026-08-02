@@ -1,0 +1,27 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: nexfetch
+Label: nexfetch APT Repository
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: APT repository for nexfetch
+Date: Sun, 02 Aug 2026 11:44:00 +0000
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEyP9p5d/4svxfTiY8nJuLgjjCAowFAmpvLYAACgkQnJuLgjjC
+AoyEGRAAm0tji55Qs4NcrFmMpEF0Rm4j5ym74wg0DJk6FgLU4kRkn4wKxOX7Af25
++ZzotlrQyZEqNO7IZLERI9+r3LbDspT1s5+RDFdJu4Fjn6AztfoAXmdixM4n5GKJ
+q1HFu1HZ8tHjeYhjiLjfj2QHIKDUbRV1nLPkYRLwn+PgHHQK6yXi5rDumgwMiKiN
+kZPf0g8HpjipobI0VlF3E77ISsniQNmUFT21b2pR6D2ROX8LVojWIR5YmMm6ZhAM
+8TVBT5kdCONp+jWz1tKpxNDlqmEHqdZ6oD2ZA3EuuOuLIXsrtEXU9yGshwln+2f5
+415UeYzUDOMk9lubKi0KMtEbaf4dt7CbHYbOV+o5ZrMm9/CZKZOGxHuSAyh/2jt+
+vciUNZsQiVLNWU9s/6snPuBSMvkJmvCWfg4qdbk3j8rRmhckrF3h8E/92yO9RIoN
+DMQJ9Js3dYS8Fxbt9qvgmWp1yTparsk2WwxhLZZU8EdWax/WXxM3SC1uWHtrl1GV
+1gcaiCYWrKtISE1MkA6gsg5ECscvm3lpXRDV5Va3c0h3MJsrqEbNRjZbk8+sQfJ0
+j4+Jj5rtsy+FcOZ1JgFJAO2lohOm/8WdROiCC/8tvpEe7FN7jz3AN9ApurdeBhRh
+RJYnxyJ5A/YB39a4DuEdS271oxcF/Cy7c6n4u/BpKZIEcwkupEI=
+=hlkF
+-----END PGP SIGNATURE-----
