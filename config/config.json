@@ -2,7 +2,7 @@
   "show_logo": true,
   "color_blocks": true,
   "theme": "boxed",
-  "logo": "./logos/nexfetch.png",
+  "logo": "",
   "logo_width": 32,
   "modules": [
     "os",
