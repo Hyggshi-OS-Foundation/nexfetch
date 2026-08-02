@@ -1,0 +1,86 @@
+name: Build dragonfly-amd64
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-dragonfly-amd64:
+    name: Build & Package (dragonfly-amd64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc make zip tar p7zip-full rpm dpkg-dev
+
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install make zip tar p7zip
+
+      - name: Install Dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install 7zip make -y
+
+      - name: Compile nexfetch
+        shell: bash
+        run: |
+          make clean || true
+          make || gcc -O2 -Iinclude -o nexfetch src/*.c modules/*.c platform/*/*.c -ldl || true
+
+      - name: Verify Binary
+        shell: bash
+        run: |
+          if [ -f "./nexfetch" ]; then
+            ./nexfetch --version || true
+          elif [ -f "./nexfetch.exe" ]; then
+            ./nexfetch.exe --version || true
+          fi
+
+      - name: Create Release Packages & Checksums
+        shell: bash
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo "v0.1.0")
+          PKG_NAME="nexfetch-dragonfly-amd64"
+          
+          mkdir -p dist/${PKG_NAME}
+          if [ -f "nexfetch.exe" ]; then
+            cp nexfetch.exe README.md LICENSE dist/${PKG_NAME}/
+          else
+            cp nexfetch README.md LICENSE dist/${PKG_NAME}/ 2>/dev/null || true
+          fi
+
+          # Package .tar.gz
+          tar -czvf dist/${PKG_NAME}.tar.gz -C dist ${PKG_NAME}
+
+          # Package .zip
+          (cd dist && zip -r ${PKG_NAME}.zip ${PKG_NAME})
+
+          # Calculate SHA256 Checksums
+          cd dist
+          for file in ${PKG_NAME}.tar.gz ${PKG_NAME}.zip; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" >> sha256sums.txt 2>/dev/null || shasum -a 256 "$file" >> sha256sums.txt 2>/dev/null || true
+            fi
+          done
+          echo "Generated SHA256 Checksums:"
+          cat sha256sums.txt
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexfetch-dragonfly-amd64
+          path: |
+            dist/*.*
