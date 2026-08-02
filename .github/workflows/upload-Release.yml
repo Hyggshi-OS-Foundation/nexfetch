@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -25,27 +26,40 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download All Build Artifacts
+      - name: Create Work Directories
+        run: mkdir -p artifacts release_assets
+
+      - name: Download Artifacts (Current Workflow)
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+        continue-on-error: true
+
+      - name: Download Artifacts (Cross-Workflow via GitHub CLI)
+        run: |
+          gh run download --repo "${{ github.repository }}" --dir artifacts 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare Release Directory & Consolidate Checksums
         run: |
-          mkdir -p release_assets
-          
-          # Move all packaged files into release_assets
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.7z" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release_assets/ \;
-          
-          # Regenerate consolidated SHA256 checksum file
+          # Copy all build packages from artifacts into release_assets
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.7z" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release_assets/ \; 2>/dev/null || true
+
+          # Calculate SHA256 checksums for all release files
           cd release_assets
           rm -f sha256sums.txt
-          sha256sum * > sha256sums.txt 2>/dev/null || shasum -a 256 * > sha256sums.txt 2>/dev/null || true
           
+          for file in *; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" >> sha256sums.txt 2>/dev/null || shasum -a 256 "$file" >> sha256sums.txt 2>/dev/null || true
+            fi
+          done
+
           echo "Release Assets List:"
           ls -la
           echo "Consolidated SHA256 Checksums:"
-          cat sha256sums.txt
+          cat sha256sums.txt 2>/dev/null || true
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
