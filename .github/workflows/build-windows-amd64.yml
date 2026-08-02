@@ -32,7 +32,7 @@ jobs:
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install 7zip make -y
+          choco install 7zip zip make -y
 
       - name: Compile nexfetch
         shell: bash

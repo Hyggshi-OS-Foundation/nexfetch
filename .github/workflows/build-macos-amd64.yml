@@ -27,7 +27,7 @@ jobs:
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install make zip tar p7zip
+          brew install make p7zip
 
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
