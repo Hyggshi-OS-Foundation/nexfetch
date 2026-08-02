@@ -1,5 +1,7 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -O2 -Iinclude
+CFLAGS ?= -Wall -Wextra -O2
+# Always ensure -Iinclude is present, even when CFLAGS is overridden by dpkg-buildpackage
+CFLAGS += -Iinclude
 
 ifeq ($(OS),Windows_NT)
     TARGET = nexfetch.exe
