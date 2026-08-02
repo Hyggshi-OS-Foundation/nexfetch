@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+export PREFIX=/usr
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) all
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/nexfetch
+
+override_dh_auto_clean:
+	$(MAKE) clean

@@ -119,25 +119,43 @@ int logo_load(const char *distro_id,
 
         if (g_config.logo_is_image) {
             int n = load_image(path, g_config.logo_width, logo_lines);
+            if (n <= 0 && path[0] != '/') {
+                char sys_path[1024];
+                snprintf(sys_path, sizeof(sys_path), "/usr/share/nexfetch/%s", path);
+                n = load_image(sys_path, g_config.logo_width, logo_lines);
+            }
             if (n > 0) return n;
             /* fall through to distro default if chafa fails */
         } else {
             int n = load_txt(path, logo_lines);
+            if (n <= 0 && path[0] != '/') {
+                char sys_path[1024];
+                snprintf(sys_path, sizeof(sys_path), "/usr/share/nexfetch/%s", path);
+                n = load_txt(sys_path, logo_lines);
+            }
             if (n > 0) return n;
         }
     }
 
     /* --- Distro logo from logos/ directory --------------------------------- */
     char path[512];
-    snprintf(path, sizeof(path), "logos/%s.txt",
-             distro_id && distro_id[0] ? distro_id : "tux");
+    const char *distro = distro_id && distro_id[0] ? distro_id : "tux";
 
+    /* Try local logos/ first, then system-wide /usr/share/nexfetch/logos/ */
+    snprintf(path, sizeof(path), "logos/%s.txt", distro);
     int n = load_txt(path, logo_lines);
+    if (n <= 0) {
+        snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s.txt", distro);
+        n = load_txt(path, logo_lines);
+    }
     if (n > 0) return n;
 
     /* Fallback: Tux */
-    if (!distro_id || strcmp(distro_id, "tux") != 0) {
+    if (strcmp(distro, "tux") != 0) {
         n = load_txt("logos/tux.txt", logo_lines);
+        if (n <= 0) {
+            n = load_txt("/usr/share/nexfetch/logos/tux.txt", logo_lines);
+        }
         if (n > 0) return n;
     }
 

@@ -54,3 +54,18 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Debian build artifacts
+*.deb
+*.buildinfo
+*.changes
+*.dsc
+*.tar.gz
+*.tar.xz
+dist/
+debian/nexfetch/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/nexfetch.debhelper.log
+debian/nexfetch.substvars

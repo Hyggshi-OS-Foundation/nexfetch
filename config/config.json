@@ -2,8 +2,8 @@
   "show_logo": true,
   "color_blocks": true,
   "theme": "boxed",
-  "logo": "./logos/tux.txt",
-  "logo_width": 16,
+  "logo": "./logos/nexfetch.png",
+  "logo_width": 32,
   "modules": [
     "os",
     "kernel",

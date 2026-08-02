@@ -65,7 +65,13 @@ static int is_image_path(const char *path) {
 
 void config_init(void) {
     char buf[4096] = "";
-    if (!util_read_file_content("config/config.json", buf, sizeof(buf))) return;
+    /* Try local config first, then system-wide locations */
+    if (!util_read_file_content("config/config.json", buf, sizeof(buf))) {
+        if (!util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
+            if (!util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf)))
+                return;
+        }
+    }
 
     if (strstr(buf, "\"show_logo\": false") || strstr(buf, "\"show_logo\":false"))
         g_config.show_logo = 0;

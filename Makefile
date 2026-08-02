@@ -88,5 +88,28 @@ clean:
 run: all
 	./$(TARGET)
 
-.PHONY: all clean run
+# Installation directories (overridable for packaging)
+PREFIX  ?= /usr
+BINDIR  ?= $(PREFIX)/bin
+DATADIR ?= $(PREFIX)/share/nexfetch
+SYSCONFDIR ?= /etc/nexfetch
 
+install: all
+	install -d $(DESTDIR)$(BINDIR)
+	install -d $(DESTDIR)$(DATADIR)/logos
+	install -d $(DESTDIR)$(DATADIR)/config
+	install -d $(DESTDIR)$(SYSCONFDIR)
+	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	cp -r logos/* $(DESTDIR)$(DATADIR)/logos/
+	cp config/config.json $(DESTDIR)$(DATADIR)/config/
+	if [ ! -f $(DESTDIR)$(SYSCONFDIR)/config.json ]; then \
+		cp config/config.json $(DESTDIR)$(SYSCONFDIR)/config.json; \
+	fi
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
+	rm -rf $(DESTDIR)$(DATADIR)
+	rm -f $(DESTDIR)$(SYSCONFDIR)/config.json
+	rmdir $(DESTDIR)$(SYSCONFDIR) 2>/dev/null || true
+
+.PHONY: all clean run install uninstall
