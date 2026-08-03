@@ -2,14 +2,14 @@ Package: nexfetch
 Version: 1.0.0-1
 Architecture: arm64
 Maintainer: Hyggshi OS Foundation <hyggshidev@gmail.com>
-Installed-Size: 504
+Installed-Size: 783
 Depends: libc6 (>= 2.34)
 Recommends: chafa
 Filename: pool/main/n/nexfetch/nexfetch_1.0.0-1_arm64.deb
-Size: 387594
-MD5sum: 878dbd5557cd5116ff66849c57801084
-SHA1: 4d85bcdca4534345485f919bfed769f5c15e6add
-SHA256: d684bf9a92d4b909e757fa2a7e8891d8cbdd7dbc865ceb0c811e9d0adf0e1eec
+Size: 398144
+MD5sum: fbc8823b1ea221e68a3ec73f96db03a6
+SHA1: aeaafdcddb3839f07143c86dd2f3a0a5973ff232
+SHA256: 26c5eeabf455558983dd998f1c00f1a2fe62971120462b81fa1ef6a7010e4f81
 Section: utils
 Priority: optional
 Homepage: https://github.com/Hyggshi-OS-Foundation/nexfetch
