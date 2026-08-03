@@ -274,7 +274,7 @@ static void trim(char *s)
         s[--len] = '\0';
 }
 
-/* Đếm số thiết bị video trong /sys/class/video4linux/ */
+/* Count the number of video devices in /sys/class/video4linux/ */
 static int count_video_devices(void)
 {
     DIR *dir = opendir("/sys/class/video4linux");
@@ -290,7 +290,7 @@ static int count_video_devices(void)
     return count;
 }
 
-/* Lấy tên camera đầu tiên từ /sys/class/video4linux/videoX/name */
+/* Get the first camera name from /sys/class/video4linux/videoX/name */
 static void get_first_camera_name(char *out, size_t max_len)
 {
     DIR *dir = opendir("/sys/class/video4linux");
