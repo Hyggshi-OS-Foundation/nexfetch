@@ -2,7 +2,7 @@
   "show_logo": true,
   "color_blocks": true,
   "theme": "classic",
-  "logo": "./logos/alpine.txt",
+  "logo": "",
   "logo_width": 32,
   "background_image": "",
   "plugins": [
