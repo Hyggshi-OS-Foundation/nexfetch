@@ -12,6 +12,11 @@
   <em>Similar to Neofetch and Fastfetch — but with auto-scaling logos, pluggable modules, and multiple presentation themes built in.</em>
 </p>
 
+<img src="Resources/screenshot1.png" width="48%" align="left" />
+<img src="Resources/screenshot2.png" width="48%" align="left" />
+<img src="Resources/screenshot3.png" width="48%" align="top" />
+<img src="Resources/screenshot4.png" width="48%" align="top" />
+
 ---
 
 ## ✨ Features
