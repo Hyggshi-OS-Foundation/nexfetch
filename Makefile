@@ -47,6 +47,22 @@ else
     endif
 endif
 
+# Plugin extension depends on platform
+ifeq ($(OS),Windows_NT)
+    PLUGIN_EXT = dll
+else ifeq ($(findstring MINGW,$(UNAME_S)),MINGW)
+    PLUGIN_EXT = dll
+else ifeq ($(findstring MSYS,$(UNAME_S)),MSYS)
+    PLUGIN_EXT = dll
+else ifeq ($(findstring CYGWIN,$(UNAME_S)),CYGWIN)
+    PLUGIN_EXT = dll
+else
+    PLUGIN_EXT = so
+endif
+
+PLUGIN_SRC = $(wildcard plugins/*.c)
+PLUGIN_TARGETS = $(patsubst plugins/%.c, plugins/%.$(PLUGIN_EXT), $(PLUGIN_SRC))
+
 SRC = src/main.c \
       src/util.c \
       src/config.c \
@@ -76,16 +92,22 @@ SRC = src/main.c \
 
 OBJ = $(SRC:.c=.o)
 
-all: $(TARGET)
+all: $(TARGET) $(PLUGIN_TARGETS)
 
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
+	$(CC) $(CFLAGS) -rdynamic -o $@ $(OBJ) $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+plugins/%.so: plugins/%.c
+	$(CC) $(CFLAGS) -fPIC -shared -o $@ $<
+
+plugins/%.dll: plugins/%.c
+	$(CC) $(CFLAGS) -shared -o $@ $<
+
 clean:
-	rm -f $(OBJ) $(TARGET) nexfetch.exe platform/*/*.o
+	rm -f $(OBJ) $(TARGET) nexfetch.exe platform/*/*.o plugins/*.so plugins/*.dll
 
 run: all
 	./$(TARGET)
@@ -100,10 +122,12 @@ install: all
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(DATADIR)/logos
 	install -d $(DESTDIR)$(DATADIR)/config
+	install -d $(DESTDIR)$(DATADIR)/plugins
 	install -d $(DESTDIR)$(SYSCONFDIR)
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	cp -r logos/* $(DESTDIR)$(DATADIR)/logos/
 	cp config/config.json $(DESTDIR)$(DATADIR)/config/
+	cp plugins/*.$(PLUGIN_EXT) $(DESTDIR)$(DATADIR)/plugins/ 2>/dev/null || true
 	if [ ! -f $(DESTDIR)$(SYSCONFDIR)/config.json ]; then \
 		cp config/config.json $(DESTDIR)$(SYSCONFDIR)/config.json; \
 	fi

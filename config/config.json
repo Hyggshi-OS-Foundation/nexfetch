@@ -1,9 +1,16 @@
 {
   "show_logo": true,
   "color_blocks": true,
-  "theme": "boxed",
-  "logo": "",
+  "theme": "classic",
+  "logo": "./logos/alpine.txt",
   "logo_width": 32,
+  "background_image": "",
+  "plugins": [
+    "plugins/my_plugin.so",
+    "plugins/docker.so",
+    "plugins/vision.so",
+    "plugins/vision_nexfetch.so"
+  ],
   "modules": [
     "os",
     "kernel",
@@ -25,6 +32,10 @@
     "theme",
     "icons",
     "font",
-    "locale"
+    "locale",
+    "mymodule",
+    "vision_docker",
+    "visioncamera",
+    "vision_nexfetch"
   ]
 }

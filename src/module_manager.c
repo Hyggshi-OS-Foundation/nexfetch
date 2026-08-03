@@ -9,6 +9,9 @@
 #include <dlfcn.h>
 #endif
 
+/* Version symbol exported to plugins via dlsym(RTLD_DEFAULT, "nexfetch_version") */
+const char *nexfetch_version = NEXFETCH_VERSION;
+
 static Module s_modules[MAX_MODULES];
 static int s_module_count = 0;
 

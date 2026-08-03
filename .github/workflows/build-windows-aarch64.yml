@@ -62,6 +62,13 @@ jobs:
             cp nexfetch README.md LICENSE dist/${PKG_NAME}/ 2>/dev/null || true
           fi
 
+          # Include config, logos, and compiled plugins
+          mkdir -p dist/${PKG_NAME}/config dist/${PKG_NAME}/plugins dist/${PKG_NAME}/logos
+          cp -r config/* dist/${PKG_NAME}/config/
+          cp -r logos/* dist/${PKG_NAME}/logos/
+          cp plugins/*.so dist/${PKG_NAME}/plugins/ 2>/dev/null || true
+          cp plugins/*.dll dist/${PKG_NAME}/plugins/ 2>/dev/null || true
+
           # Package .zip
           (cd dist && zip -r ${PKG_NAME}.zip ${PKG_NAME})
 

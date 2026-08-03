@@ -5,8 +5,9 @@
 #include "platform.h"
 #include "util.h"
 
-#define NEXFETCH_VERSION "1.0.0"
+#define NEXFETCH_VERSION "1.1.0"
 #define MAX_MODULES 48
+#define MAX_PLUGINS 16
 #define MAX_VAL_LEN 512
 #define MAX_LOGO_LINES 32
 #define MAX_LOGO_LINE_LEN 2048   /* must fit full chafa-rendered lines (up to ~700 raw bytes) */
@@ -14,12 +15,24 @@
 
 typedef struct NexfetchConfig {
     int show_logo;
-    char custom_logo_path[512];   /* path from config.json "logo" field or --logo flag */
-    int  logo_is_image;           /* 1 = PNG/JPG/GIF → convert via chafa; 0 = .txt */
-    int  logo_width;              /* columns for chafa conversion (0 = auto 32) */
+    char custom_logo_path[512];        /* path from config.json "logo" field or --logo flag */
+    int  logo_is_image;                /* 1 = PNG/JPG/GIF → convert via chafa; 0 = .txt */
+    int  logo_is_video;                /* 1 = MP4 → extract first frame via ffmpeg, then chafa */
+    int  logo_width;                   /* columns for chafa conversion (0 = auto 32) */
     char distro_id[64];
     int color_blocks;
-    char theme[64];               /* active presentation theme: "boxed", "classic", "modern" */
+    char theme[64];                    /* active presentation theme: "boxed", "classic", "modern" */
+    char background_image_path[512];   /* path to background image rendered as full-terminal ANSI art */
+
+    /* Module filter: keys listed in config.json "modules" array.
+     * When enabled_module_count == 0 the filter is inactive and all modules run. */
+    char enabled_modules[MAX_MODULES][32];
+    int  enabled_module_count;
+
+    /* Plugin paths listed in config.json "plugins" array.
+     * Loaded at startup via module_manager_load_plugin(). */
+    char plugin_paths[MAX_PLUGINS][512];
+    int  plugin_count;
 } NexfetchConfig;
 
 extern NexfetchConfig g_config;

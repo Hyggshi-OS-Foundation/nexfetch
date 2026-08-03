@@ -169,6 +169,10 @@ nexfetch reads `config/config.json` at startup. Below is the default configurati
   "theme": "boxed",
   "logo": "",
   "logo_width": 16,
+  "background_image": "",
+  "plugins": [
+    "plugins/myplugin.so"
+  ],
   "modules": [
     "os", "kernel", "host", "uptime", "packages", "display",
     "shell", "de", "wm", "terminal", "cpu", "gpu", "memory",
@@ -185,6 +189,8 @@ nexfetch reads `config/config.json` at startup. Below is the default configurati
 | `theme` | string | Presentation theme: `boxed`, `classic`, or `modern` |
 | `logo` | string | Path to a custom logo file (`.txt` or image) |
 | `logo_width` | integer | Width in columns for image logos (used with `chafa`) |
+| `background_image` | string | Path to an image rendered as full-terminal background (requires `chafa`) |
+| `plugins` | array | Paths to dynamic plugin shared libraries (`.so`/`.dll`) to load |
 | `modules` | array | Ordered list of module keys to display |
 
 > **Note:** CLI flags override values set in `config.json`.
@@ -245,6 +251,194 @@ gcc -shared -o plugins/myplugin.dll my_plugin.c
 ```
 
 The plugin is loaded at runtime via `module_manager_load_plugin()`, which resolves `plugin_name`, `plugin_key`, and `plugin_detect`.
+
+### Vision Plugin (Camera/Webcam)
+
+nexfetch ships with a **Vision Plugin** that detects and displays camera/webcam information on your system:
+
+```c
+// plugins/vision.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+#include <dirent.h>
+
+const char *plugin_name = "Vision Camera";
+const char *plugin_key  = "visioncamera";
+
+static void trim(char *s)
+{
+    size_t len = strlen(s);
+    while (len && (s[len - 1] == '\n' || s[len - 1] == '\r'))
+        s[--len] = '\0';
+}
+
+/* Đếm số thiết bị video trong /sys/class/video4linux/ */
+static int count_video_devices(void)
+{
+    DIR *dir = opendir("/sys/class/video4linux");
+    if (!dir) return 0;
+
+    int count = 0;
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (strncmp(ent->d_name, "video", 5) == 0)
+            count++;
+    }
+    closedir(dir);
+    return count;
+}
+
+/* Lấy tên camera đầu tiên từ /sys/class/video4linux/videoX/name */
+static void get_first_camera_name(char *out, size_t max_len)
+{
+    DIR *dir = opendir("/sys/class/video4linux");
+    if (!dir) {
+        snprintf(out, max_len, "Unknown");
+        return;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (strncmp(ent->d_name, "video", 5) != 0) continue;
+
+        char path[512];
+        snprintf(path, sizeof(path), "/sys/class/video4linux/%s/name", ent->d_name);
+
+        FILE *fp = fopen(path, "r");
+        if (fp) {
+            if (fgets(out, (int)max_len, fp))
+                trim(out);
+            fclose(fp);
+            closedir(dir);
+            return;
+        }
+    }
+    closedir(dir);
+    snprintf(out, max_len, "Unknown");
+}
+
+void plugin_detect(char *out, size_t max_len)
+{
+    int count = count_video_devices();
+    char name[128] = "Unknown";
+
+    if (count > 0)
+        get_first_camera_name(name, sizeof(name));
+
+    if (count <= 0) {
+        snprintf(out, max_len, "No camera detected");
+        return;
+    }
+
+    if (count == 1) {
+        snprintf(out, max_len, "%s (1 camera)", name);
+    } else {
+        snprintf(out, max_len, "%s (+%d more cameras)", name, count - 1);
+    }
+}
+```
+
+Compile the Vision Plugin:
+
+```bash
+# Linux/macOS
+gcc -shared -fPIC -o plugins/vision.so plugins/vision.c
+
+# Windows (requires V4L2 emulation layer)
+gcc -shared -o plugins/vision.dll plugins/vision.c
+```
+
+Then register it in `config/config.json`:
+
+```json
+{
+  "plugins": ["plugins/vision.so"],
+  "modules": [ "os", "kernel", "...", "visioncamera" ]
+}
+```
+
+**How it works:**
+
+| Step | Description |
+| --- | --- |
+| Scan | `count_video_devices()` scans `/sys/class/video4linux/` counting `video*` nodes |
+| Name | `get_first_camera_name()` reads the device name from `videoX/name` |
+| Output | `Camera Name (N cameras)` — or `No camera detected` if none found |
+
+**Example output:**
+
+```
+Vision Camera: Integrated_Webcam_HD: Integrate (+1 more cameras)
+```
+
+> **Note:** On Linux, a single physical webcam often exposes multiple `/dev/videoN` nodes (e.g. `video0` for capture, `video1` for metadata). The Vision Plugin counts them all.
+
+### Vision for Nexfetch Plugin (Version)
+
+A lightweight plugin that displays the **Vision for Nexfetch** version banner — dynamically resolved from the running `nexfetch` binary (no hardcoded version):
+
+```c
+// plugins/vision_nexfetch.c
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
+const char *plugin_name = "Vision for Nexfetch";
+const char *plugin_key  = "vision_nexfetch";
+
+void plugin_detect(char *out, size_t max_len)
+{
+    const char *version = "unknown";
+
+#ifdef _WIN32
+    HMODULE host = GetModuleHandleA(NULL);
+    if (host) {
+        const char **ver_ptr = (const char **)GetProcAddress(host, "nexfetch_version");
+        if (ver_ptr && *ver_ptr)
+            version = *ver_ptr;
+    }
+#else
+    const char **ver_ptr = (const char **)dlsym(RTLD_DEFAULT, "nexfetch_version");
+    if (ver_ptr && *ver_ptr)
+        version = *ver_ptr;
+#endif
+
+    snprintf(out, max_len, "v%s", version);
+}
+```
+
+Compile and register:
+
+```bash
+gcc -shared -fPIC -o plugins/vision_nexfetch.so plugins/vision_nexfetch.c
+```
+
+```json
+{
+  "plugins": ["plugins/vision_nexfetch.so"],
+  "modules": [ "os", "kernel", "...", "vision_nexfetch" ]
+}
+```
+
+**Example output:**
+
+```
+Vision for Nexfetch: v1.1.0
+```
+
+> **Notes:**
+> - The presenter automatically prefixes the value with the plugin name (`Vision for Nexfetch: <value>`), so `plugin_detect()` only writes the version string.
+> - On Linux/macOS, nexfetch is built with `-rdynamic` and exports the `nexfetch_version` symbol (defined in `src/module_manager.c`). The plugin resolves it at runtime via `dlsym(RTLD_DEFAULT, "nexfetch_version")` — so the version always matches the running binary, no manual updates needed.
+> - On Windows, the plugin reads the same symbol from the host executable via `GetProcAddress`.
+
+To bump the nexfetch version, only `NEXFETCH_VERSION` in `include/nexfetch.h` needs to change — the plugin picks it up automatically.
 
 ## 🎨 Themes
 

@@ -25,4 +25,7 @@ int module_manager_get_count(void);
 Module *module_manager_get(int index);
 void module_manager_cleanup(void);
 
+/* Global version symbol exported to dynamic plugins via dlsym(RTLD_DEFAULT, "nexfetch_version") */
+extern const char *nexfetch_version;
+
 #endif /* MODULE_H */

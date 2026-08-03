@@ -81,9 +81,15 @@ jobs:
           path: dist/*.deb
           if-no-files-found: warn
 
-      - name: Include config.json alongside the .deb
+      - name: Include config, logos, and plugins alongside the .deb
         if: startsWith(github.ref, 'refs/tags/v')
-        run: cp config/config.json dist/config.json
+        run: |
+          mkdir -p dist/config dist/logos dist/plugins
+          cp -r config/* dist/config/
+          cp -r logos/* dist/logos/
+          cp plugins/*.so dist/plugins/ 2>/dev/null || true
+          cp plugins/*.dll dist/plugins/ 2>/dev/null || true
+          cp config/config.json dist/config.json
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -92,6 +98,9 @@ jobs:
           files: |
             dist/*.deb
             dist/config.json
+            dist/config/*
+            dist/logos/*
+            dist/plugins/*
           draft: false
           prerelease: false
           generate_release_notes: true

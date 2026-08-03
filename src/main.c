@@ -9,6 +9,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <lmcons.h>
+#include <io.h>
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
@@ -74,6 +75,25 @@ static void get_user_host_str(char *out, size_t size,
         user_raw, host_raw);
 }
 
+/*
+ * clear_full_screen() wipes the entire terminal viewport (not just the
+ * cursor's current line) and homes the cursor before nexfetch draws its
+ * background/box. Without this, re-running nexfetch in the same terminal
+ * -- or shrinking the box by disabling a module/the logo between runs --
+ * left stray fragments of the previous, larger frame (leftover border
+ * characters) visible around the new, smaller one. Only emitted when
+ * stdout is an actual terminal, so piping/redirecting output stays clean.
+ */
+static void clear_full_screen(void) {
+#ifdef _WIN32
+    if (!_isatty(_fileno(stdout))) return;
+#else
+    if (!isatty(STDOUT_FILENO)) return;
+#endif
+    fputs("\033[2J\033[3J\033[H", stdout);
+    fflush(stdout);
+}
+
 static int get_terminal_width(void) {
 #ifdef _WIN32
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -120,7 +140,45 @@ int main(int argc, char *argv[]) {
             snprintf(g_config.theme, sizeof(g_config.theme), "%s", argv[++i]);
         }
         if (strcmp(argv[i], "--logo") == 0 && i + 1 < argc) {
-            snprintf(g_config.custom_logo_path, sizeof(g_config.custom_logo_path), "%s", argv[++i]);
+            const char *logo_arg = argv[++i];
+            snprintf(g_config.custom_logo_path, sizeof(g_config.custom_logo_path), "%s", logo_arg);
+            /* Detect logo type from extension */
+            const char *dot = strrchr(logo_arg, '.');
+            if (dot) {
+                const char *ext = dot + 1;
+                /* Video extensions */
+                const char *vexts[] = { "mp4", "mkv", "avi", "webm", "mov", NULL };
+                int is_vid = 0;
+                for (int j = 0; vexts[j]; j++) {
+#ifdef _WIN32
+                    if (_stricmp(ext, vexts[j]) == 0) { is_vid = 1; break; }
+#else
+                    if (strcasecmp(ext, vexts[j]) == 0) { is_vid = 1; break; }
+#endif
+                }
+                /* Image extensions */
+                const char *iexts[] = { "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", NULL };
+                int is_img = 0;
+                for (int j = 0; iexts[j]; j++) {
+#ifdef _WIN32
+                    if (_stricmp(ext, iexts[j]) == 0) { is_img = 1; break; }
+#else
+                    if (strcasecmp(ext, iexts[j]) == 0) { is_img = 1; break; }
+#endif
+                }
+                g_config.logo_is_video = is_vid;
+                g_config.logo_is_image = is_vid ? 0 : is_img;
+            }
+        }
+        if (strcmp(argv[i], "--bg") == 0 && i + 1 < argc) {
+            snprintf(g_config.background_image_path,
+                     sizeof(g_config.background_image_path), "%s", argv[++i]);
+        }
+        if (strcmp(argv[i], "--no-bg") == 0) {
+            /* Explicitly clear any background image path set by config.json
+               or an earlier --bg, since previously there was no CLI flag
+               capable of turning a configured background back off. */
+            g_config.background_image_path[0] = '\0';
         }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("nexfetch - Modern Modular System Fetch CLI\n");
@@ -129,7 +187,9 @@ int main(int argc, char *argv[]) {
             printf("  -h, --help           Show help options\n");
             printf("  -v, --version        Show version information\n");
             printf("  --no-logo            Disable ASCII logo display\n");
-            printf("  --logo <path>        Use custom ASCII or PNG logo file\n");
+            printf("  --logo <path>        Use custom ASCII, PNG/JPG, or MP4 logo file\n");
+            printf("  --bg <path>          Render image as full-terminal background (requires chafa)\n");
+            printf("  --no-bg              Disable background image, even if set in config.json\n");
             printf("  --theme <name>       Set presentation theme (boxed, classic, modern)\n");
             printf("  --list-modules       List all registered modules\n");
             return 0;
@@ -162,6 +222,11 @@ int main(int argc, char *argv[]) {
     module_manager_register("Icons",    "icons",    module_detect_icons);
     module_manager_register("Font",     "font",     module_detect_font);
     module_manager_register("Locale",   "locale",   module_detect_locale);
+
+    /* Load dynamic plugins listed in config.json "plugins" array */
+    for (int i = 0; i < g_config.plugin_count; i++) {
+        module_manager_load_plugin(g_config.plugin_paths[i]);
+    }
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--list-modules") == 0) {
@@ -211,6 +276,22 @@ int main(int argc, char *argv[]) {
         Module *m = module_manager_get(i);
         val_buffers[result_count][0] = '\0';
 
+        /* If the config specifies a module list, skip anything not in it */
+        if (g_config.enabled_module_count > 0) {
+            int allowed = 0;
+            for (int j = 0; j < g_config.enabled_module_count; j++) {
+#ifdef _WIN32
+                if (_stricmp(m->key, g_config.enabled_modules[j]) == 0) {
+#else
+                if (strcasecmp(m->key, g_config.enabled_modules[j]) == 0) {
+#endif
+                    allowed = 1;
+                    break;
+                }
+            }
+            if (!allowed) continue;
+        }
+
         if (m->detect) {
             m->detect(val_buffers[result_count], MAX_VAL_LEN);
         }
@@ -236,7 +317,16 @@ int main(int argc, char *argv[]) {
     for (size_t i = 0; i < sep_len && i < sizeof(sep) - 1; i++) sep[i] = '-';
     sep[sep_len] = '\0';
 
+    /* Wipe the whole viewport first so nothing from a previous, larger
+       frame (or a prior run) can peek out from behind the new one. */
+    clear_full_screen();
+
     /* Delegate presentation rendering to the active Presenter Plugin/Theme */
+    /* Render background image first if configured (renders behind fetch output) */
+    if (g_config.background_image_path[0] != '\0') {
+        render_background(g_config.background_image_path);
+    }
+
     presenter_render(logo_lines, logo_count, max_logo_width,
                      results, result_count,
                      user_host, sep);

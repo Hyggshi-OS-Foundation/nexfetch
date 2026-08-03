@@ -30,5 +30,6 @@ void presenter_render(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN],
                       int result_count,
                       const char *user_host,
                       const char *separator);
+void render_background(const char *image_path);
 
 #endif /* PRESENTER_H */

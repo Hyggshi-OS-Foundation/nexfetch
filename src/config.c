@@ -9,13 +9,16 @@
 #endif
 
 NexfetchConfig g_config = {
-    .show_logo         = 1,
-    .custom_logo_path  = "",
-    .logo_is_image     = 0,
-    .logo_width        = 0,
-    .distro_id         = "tux",
-    .color_blocks      = 1,
-    .theme             = "boxed"
+    .show_logo              = 1,
+    .custom_logo_path       = "",
+    .logo_is_image          = 0,
+    .logo_is_video          = 0,
+    .logo_width             = 0,
+    .distro_id              = "tux",
+    .color_blocks           = 1,
+    .theme                  = "boxed",
+    .background_image_path  = "",
+    .enabled_module_count   = 0
 };
 
 static int json_get_string(const char *json, const char *key, char *out, size_t out_size) {
@@ -63,6 +66,63 @@ static int is_image_path(const char *path) {
     return 0;
 }
 
+static int is_video_path(const char *path) {
+    if (!path || !*path) return 0;
+    const char *dot = strrchr(path, '.');
+    if (!dot) return 0;
+    const char *ext = dot + 1;
+    /* Currently supports MP4; extend this list for mkv/avi/webm etc. */
+    const char *video_exts[] = { "mp4", "mkv", "avi", "webm", "mov", NULL };
+    for (int i = 0; video_exts[i]; i++) {
+        if (strcasecmp(ext, video_exts[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Parse the JSON "modules" array and store each key in g_config.enabled_modules.
+ * The array looks like: "modules": ["os", "kernel", "cpu"]
+ * Handles both compact and pretty-printed JSON.
+ */
+static void json_parse_plugins_array(const char *json);
+
+static void json_parse_modules_array(const char *json) {
+    /* Locate the "modules" key */
+    const char *p = strstr(json, "\"modules\"");
+    if (!p) return;
+    p += strlen("\"modules\"");
+
+    /* Skip whitespace and colon */
+    while (*p && (isspace((unsigned char)*p) || *p == ':')) p++;
+    if (*p != '[') return;   /* expected array */
+    p++;                      /* skip '[' */
+
+    g_config.enabled_module_count = 0;
+
+    while (*p && *p != ']' && g_config.enabled_module_count < MAX_MODULES) {
+        /* Skip whitespace and commas */
+        while (*p && (isspace((unsigned char)*p) || *p == ',')) p++;
+        if (*p == ']' || *p == '\0') break;
+
+        if (*p != '"') { p++; continue; }   /* skip unexpected chars */
+        p++;                                  /* skip opening quote */
+
+        /* Copy the key name */
+        char key[32];
+        size_t ki = 0;
+        while (*p && *p != '"' && ki < sizeof(key) - 1)
+            key[ki++] = *p++;
+        key[ki] = '\0';
+        if (*p == '"') p++;   /* skip closing quote */
+
+        if (ki > 0) {
+            snprintf(g_config.enabled_modules[g_config.enabled_module_count],
+                     sizeof(g_config.enabled_modules[0]), "%s", key);
+            g_config.enabled_module_count++;
+        }
+    }
+}
+
 void config_init(void) {
     char buf[4096] = "";
     /* Try local config first, then system-wide locations */
@@ -82,7 +142,18 @@ void config_init(void) {
     char logo_path[512] = "";
     if (json_get_string(buf, "logo", logo_path, sizeof(logo_path)) && logo_path[0] != '\0') {
         snprintf(g_config.custom_logo_path, sizeof(g_config.custom_logo_path), "%s", logo_path);
-        g_config.logo_is_image = is_image_path(logo_path);
+        if (is_video_path(logo_path)) {
+            g_config.logo_is_video = 1;
+            g_config.logo_is_image = 0;
+        } else {
+            g_config.logo_is_image = is_image_path(logo_path);
+            g_config.logo_is_video = 0;
+        }
+    }
+
+    char bg_path[512] = "";
+    if (json_get_string(buf, "background_image", bg_path, sizeof(bg_path)) && bg_path[0] != '\0') {
+        snprintf(g_config.background_image_path, sizeof(g_config.background_image_path), "%s", bg_path);
     }
 
     char theme_val[64] = "";
@@ -102,6 +173,54 @@ void config_init(void) {
                 int w = atoi(col + 1);
                 if (w > 0) g_config.logo_width = w;
             }
+        }
+    }
+
+    /* Parse the module filter list */
+    json_parse_modules_array(buf);
+
+    /* Parse the plugin path list */
+    json_parse_plugins_array(buf);
+}
+
+/*
+ * Parse the JSON "plugins" array and store each path in g_config.plugin_paths.
+ * The array looks like: "plugins": ["plugins/myplugin.so"]
+ * Handles both compact and pretty-printed JSON.
+ */
+static void json_parse_plugins_array(const char *json) {
+    /* Locate the "plugins" key */
+    const char *p = strstr(json, "\"plugins\"");
+    if (!p) return;
+    p += strlen("\"plugins\"");
+
+    /* Skip whitespace and colon */
+    while (*p && (isspace((unsigned char)*p) || *p == ':')) p++;
+    if (*p != '[') return;   /* expected array */
+    p++;                      /* skip '[' */
+
+    g_config.plugin_count = 0;
+
+    while (*p && *p != ']' && g_config.plugin_count < MAX_PLUGINS) {
+        /* Skip whitespace and commas */
+        while (*p && (isspace((unsigned char)*p) || *p == ',')) p++;
+        if (*p == ']' || *p == '\0') break;
+
+        if (*p != '"') { p++; continue; }   /* skip unexpected chars */
+        p++;                                  /* skip opening quote */
+
+        /* Copy the path */
+        char path[512];
+        size_t pi = 0;
+        while (*p && *p != '"' && pi < sizeof(path) - 1)
+            path[pi++] = *p++;
+        path[pi] = '\0';
+        if (*p == '"') p++;   /* skip closing quote */
+
+        if (pi > 0) {
+            snprintf(g_config.plugin_paths[g_config.plugin_count],
+                     sizeof(g_config.plugin_paths[0]), "%s", path);
+            g_config.plugin_count++;
         }
     }
 }

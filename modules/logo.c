@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>   /* getpid() */
+#endif
 
 extern size_t ansi_visible_length(const char *str);
 
@@ -103,6 +106,33 @@ static int load_image(const char *path, int logo_width,
 }
 
 /*
+ * Load logo from a video file (MP4/MKV/…) by extracting the first frame
+ * with ffmpeg, then rendering it through chafa like a regular image.
+ * The temp file is cleaned up after conversion.
+ */
+static int load_video(const char *path, int logo_width,
+                      char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
+    /* Build a unique temp path to avoid clashes when running concurrently */
+    char tmp_path[256];
+    snprintf(tmp_path, sizeof(tmp_path), "/tmp/nexfetch_logo_%d.png", (int)getpid());
+
+    /* Extract the very first video frame as PNG via ffmpeg */
+    char cmd[1280];
+    snprintf(cmd, sizeof(cmd),
+        "ffmpeg -y -loglevel quiet -i '%s' -vframes 1 '%s' 2>/dev/null",
+        path, tmp_path);
+
+    int rc = system(cmd);
+    if (rc != 0) return 0;   /* ffmpeg not found or failed */
+
+    int n = load_image(tmp_path, logo_width, logo_lines);
+
+    /* Clean up temp file regardless of result */
+    remove(tmp_path);
+    return n;
+}
+
+/*
  * Public entry point.
  * Priority:
  *   1. config.json "logo" path (image or txt)
@@ -117,7 +147,16 @@ int logo_load(const char *distro_id,
     if (g_config.custom_logo_path[0] != '\0') {
         const char *path = g_config.custom_logo_path;
 
-        if (g_config.logo_is_image) {
+        if (g_config.logo_is_video) {
+            int n = load_video(path, g_config.logo_width, logo_lines);
+            if (n <= 0 && path[0] != '/') {
+                char sys_path[1024];
+                snprintf(sys_path, sizeof(sys_path), "/usr/share/nexfetch/%s", path);
+                n = load_video(sys_path, g_config.logo_width, logo_lines);
+            }
+            if (n > 0) return n;
+            /* fall through to distro default if ffmpeg/chafa fails */
+        } else if (g_config.logo_is_image) {
             int n = load_image(path, g_config.logo_width, logo_lines);
             if (n <= 0 && path[0] != '/') {
                 char sys_path[1024];
