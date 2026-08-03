@@ -17,6 +17,9 @@
 <img src="Resources/screenshot3.png" width="48%" align="top" />
 <img src="Resources/screenshot4.png" width="48%" align="top" />
 
+> [!WARNING]
+> Independent project, not affiliated with ghvbb/NexFetch
+
 ---
 
 ## ✨ Features
