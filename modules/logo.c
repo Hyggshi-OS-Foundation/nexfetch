@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #ifndef _WIN32
-#include <unistd.h>   /* getpid() */
+#include <unistd.h>   /* getpid(), access(), usleep() */
+#include <time.h>     /* time() */
+#include <signal.h>   /* sigaction() */
 #endif
 
 extern size_t ansi_visible_length(const char *str);
@@ -55,6 +57,137 @@ static int store_line(char *buf, int line_count,
     return 1;
 }
 
+/* -------------------------------------------------------------------------
+ * logo_gif_animate() -- in-place animated GIF playback in the logo area
+ *
+ * Called AFTER the initial static nexfetch render. Uses ffmpeg to extract
+ * every frame of the GIF into a temp directory, then loops through them via
+ * chafa, repositioning the cursor to the logo area for each frame so the
+ * info text panel to the right stays visible and untouched.
+ *
+ * Parameters:
+ *   path          - path to the .gif file (same as custom_logo_path)
+ *   logo_width    - target column width for chafa (must match load_image's width)
+ *   logo_height   - number of terminal rows the logo occupies (= logo_count)
+ *   duration_secs - seconds to play; 0 = loop indefinitely until Ctrl+C
+ * -------------------------------------------------------------------------*/
+#ifndef _WIN32
+static volatile sig_atomic_t s_anim_stop = 0;
+
+static void anim_sigint_handler(int sig) {
+    (void)sig;
+    s_anim_stop = 1;
+}
+
+/* Run a shell cleanup command and discard the return value deliberately.
+ * Using "if (system()) {}" satisfies -Wunused-result (the return value is
+ * read by the condition) while making it obvious we don't act on it. */
+static void run_shell(const char *cmd) { if (system(cmd)) { /* ignored */ } }
+
+void logo_gif_animate(const char *path, int logo_width, int logo_height,
+                      int duration_secs) {
+    if (!path || !path[0] || logo_width <= 0 || logo_height <= 0) return;
+
+    /* Unique temp directory so concurrent nexfetch invocations don't collide */
+    char tmp_dir[256];
+    snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/nexfetch_anim_%d", (int)getpid());
+
+    char cmd[1280];
+    snprintf(cmd, sizeof(cmd), "mkdir -p '%s' 2>/dev/null", tmp_dir);
+    if (system(cmd) != 0) return;
+
+    /* Extract every frame of the GIF as a separate PNG using ffmpeg */
+    snprintf(cmd, sizeof(cmd),
+        "ffmpeg -y -loglevel quiet -i '%s' -vsync 0 '%s/f%%04d.png' 2>/dev/null",
+        path, tmp_dir);
+    if (system(cmd) != 0) {
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
+        run_shell(cmd);
+        return;
+    }
+
+    /* Count how many frames were extracted */
+    int frame_count = 0;
+    char frame_path[512];
+    for (;;) {
+        snprintf(frame_path, sizeof(frame_path), "%s/f%04d.png", tmp_dir, frame_count + 1);
+        if (access(frame_path, F_OK) != 0) break;
+        if (++frame_count >= 999) break;
+    }
+    if (frame_count == 0) {
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
+        run_shell(cmd);
+        return;
+    }
+
+    /* Install a SIGINT handler so Ctrl+C restores the cursor cleanly */
+    struct sigaction sa_old, sa_new;
+    sa_new.sa_handler = anim_sigint_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = 0;
+    sigaction(SIGINT, &sa_new, &sa_old);
+    s_anim_stop = 0;
+
+    /* Hide cursor for flicker-free animation */
+    fputs("\033[?25l", stdout);
+    fflush(stdout);
+
+    time_t start_t = time(NULL);
+    int frame_idx  = 1;
+
+    while (!s_anim_stop) {
+        if (duration_secs > 0 && (int)(time(NULL) - start_t) >= duration_secs) break;
+
+        snprintf(frame_path, sizeof(frame_path), "%s/f%04d.png", tmp_dir, frame_idx);
+
+        /* Render this frame via chafa (symbols, no animation) */
+        char chafa_cmd[1024];
+        snprintf(chafa_cmd, sizeof(chafa_cmd),
+            "chafa --animate=off --size %dx%d --format symbols '%s' 2>/dev/null",
+            logo_width, logo_height, frame_path);
+
+        FILE *fp = popen(chafa_cmd, "r");
+        if (fp) {
+            char line[MAX_LOGO_LINE_LEN * 4];
+            int row = 1;
+            while (fgets(line, sizeof(line), fp) && row <= logo_height) {
+                size_t len = strlen(line);
+                if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
+                strip_private_modes(line);
+                /* Move cursor to absolute (row, col 1) and paint the logo line */
+                printf("\033[%d;1H%s\033[0m", row, line);
+                row++;
+            }
+            pclose(fp);
+        }
+        fflush(stdout);
+
+        usleep(83000); /* ~83 ms ≈ 12 fps */
+
+        /* Advance frame, wrapping at the end */
+        frame_idx = (frame_idx % frame_count) + 1;
+    }
+
+    /* Restore cursor visibility and move below the animated area */
+    fputs("\033[?25h", stdout);
+    printf("\033[%d;1H\n", logo_height + 1);
+    fflush(stdout);
+
+    /* Restore original SIGINT handler */
+    sigaction(SIGINT, &sa_old, NULL);
+
+    /* Remove the temp frames */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
+    run_shell(cmd);
+}
+#else
+/* Stub: animated GIF logos not yet supported on Windows */
+void logo_gif_animate(const char *path, int logo_width, int logo_height,
+                      int duration_secs) {
+    (void)path; (void)logo_width; (void)logo_height; (void)duration_secs;
+}
+#endif
+
 /*
  * Load logo from a .txt file (plain ANSI art).
  */
@@ -79,6 +212,11 @@ static int load_txt(const char *path,
 /*
  * Load logo from an image file (PNG/JPG/GIF/…) by piping it through chafa.
  * chafa converts the image to ANSI art on stdout.
+ *
+ * --animate=off ensures animated GIFs are rendered as a single still frame
+ * (the first frame) instead of attempting terminal animation, which would
+ * conflict with nexfetch's static overlay layout and leave the terminal in
+ * an inconsistent state after exit.
  */
 static int load_image(const char *path, int logo_width,
                       char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
@@ -86,7 +224,7 @@ static int load_image(const char *path, int logo_width,
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "chafa --size %dx%d --format symbols '%s' 2>/dev/null",
+        "chafa --animate=off --size %dx%d --format symbols '%s' 2>/dev/null",
         width, MAX_LOGO_LINES, path);
 
     FILE *fp = popen(cmd, "r");

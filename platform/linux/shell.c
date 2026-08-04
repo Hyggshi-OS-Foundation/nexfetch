@@ -14,6 +14,22 @@ void platform_get_shell(char *out, size_t size) {
         if (name) name++;
         else name = shell_env;
 
+        /* Try environment variables first for instant lookup */
+        const char *ver_env = NULL;
+        if (strcmp(name, "bash") == 0) ver_env = getenv("BASH_VERSION");
+        else if (strcmp(name, "zsh") == 0) ver_env = getenv("ZSH_VERSION");
+        else if (strcmp(name, "fish") == 0) ver_env = getenv("FISH_VERSION");
+
+        if (ver_env && *ver_env) {
+            char ver_clean[64];
+            snprintf(ver_clean, sizeof(ver_clean), "%s", ver_env);
+            char *paren = strchr(ver_clean, '(');
+            if (paren) *paren = '\0';
+            util_trim(ver_clean);
+            snprintf(out, size, "%s (%s)", name, ver_clean);
+            return;
+        }
+
         char version[64] = "";
         char cmd[128];
         snprintf(cmd, sizeof(cmd), "%s --version 2>/dev/null", shell_env);

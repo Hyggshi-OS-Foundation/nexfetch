@@ -17,10 +17,12 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <sys/ioctl.h>
+#include <pthread.h>
 #endif
 
 extern void config_init(void);
-extern int logo_load(const char *distro_id, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
+extern int  logo_load(const char *distro_id, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
+extern void logo_gif_animate(const char *path, int logo_width, int logo_height, int duration_secs);
 extern size_t ansi_visible_length(const char *str);
 
 /* Module detectors */
@@ -47,6 +49,22 @@ extern void module_detect_font(char *out, size_t max_len);
 extern void module_detect_locale(char *out, size_t max_len);
 extern void module_detect_swap(char *out, size_t max_len);
 extern void module_detect_display(char *out, size_t max_len);
+
+#ifndef _WIN32
+typedef struct {
+    void (*detect)(char *, size_t);
+    char *buf;
+    size_t max_len;
+} ModuleWorkerTask;
+
+static void *module_worker_runner(void *arg) {
+    ModuleWorkerTask *t = (ModuleWorkerTask *)arg;
+    if (t && t->detect) {
+        t->detect(t->buf, t->max_len);
+    }
+    return NULL;
+}
+#endif
 
 static void get_user_host_str(char *out, size_t size,
                                char *user_raw, size_t user_sz,
@@ -76,13 +94,21 @@ static void get_user_host_str(char *out, size_t size,
 }
 
 /*
- * clear_full_screen() wipes the entire terminal viewport (not just the
- * cursor's current line) and homes the cursor before nexfetch draws its
- * background/box. Without this, re-running nexfetch in the same terminal
- * -- or shrinking the box by disabling a module/the logo between runs --
- * left stray fragments of the previous, larger frame (leftover border
- * characters) visible around the new, smaller one. Only emitted when
- * stdout is an actual terminal, so piping/redirecting output stays clean.
+ * clear_full_screen() clears the visible terminal viewport and homes the
+ * cursor before nexfetch draws its background/box. Without this, re-running
+ * nexfetch in the same terminal -- or shrinking the box by disabling a
+ * module/the logo between runs -- left stray fragments of the previous,
+ * larger frame (leftover border characters) visible around the new, smaller
+ * one. Only emitted when stdout is an actual terminal, so piping/redirecting
+ * output stays clean.
+ *
+ * NOTE: We intentionally do NOT use \033[3J (clear scrollback buffer) here.
+ * Clearing the scrollback wipes the user's command prompt and all previous
+ * terminal history, making it look like the cursor "disappeared" and causing
+ * the top of the fetch output to be permanently lost when the output is
+ * taller than the terminal viewport (there's no scrollback to scroll up to).
+ * \033[2J (clear visible screen) + \033[H (home cursor) is sufficient to
+ * remove stray fragments from a previous run while preserving scrollback.
  */
 static void clear_full_screen(void) {
 #ifdef _WIN32
@@ -90,7 +116,7 @@ static void clear_full_screen(void) {
 #else
     if (!isatty(STDOUT_FILENO)) return;
 #endif
-    fputs("\033[2J\033[3J\033[H", stdout);
+    fputs("\033[2J\033[H", stdout);
     fflush(stdout);
 }
 
@@ -180,18 +206,27 @@ int main(int argc, char *argv[]) {
                capable of turning a configured background back off. */
             g_config.background_image_path[0] = '\0';
         }
+        if (strcmp(argv[i], "--animate") == 0) {
+            g_config.logo_animate = 1;
+        }
+        if (strcmp(argv[i], "--animate-duration") == 0 && i + 1 < argc) {
+            int d = atoi(argv[++i]);
+            if (d >= 0) g_config.logo_animate_duration = d;
+        }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("nexfetch - Modern Modular System Fetch CLI\n");
             printf("Usage: nexfetch [options]\n\n");
             printf("Options:\n");
-            printf("  -h, --help           Show help options\n");
-            printf("  -v, --version        Show version information\n");
-            printf("  --no-logo            Disable ASCII logo display\n");
-            printf("  --logo <path>        Use custom ASCII, PNG/JPG, or MP4 logo file\n");
-            printf("  --bg <path>          Render image as full-terminal background (requires chafa)\n");
-            printf("  --no-bg              Disable background image, even if set in config.json\n");
-            printf("  --theme <name>       Set presentation theme (boxed, classic, modern)\n");
-            printf("  --list-modules       List all registered modules\n");
+            printf("  -h, --help                     Show help options\n");
+            printf("  -v, --version                  Show version information\n");
+            printf("  --no-logo                      Disable ASCII logo display\n");
+            printf("  --logo <path>                  Use custom ASCII, PNG/JPG/GIF or MP4 logo\n");
+            printf("  --animate                      Animate GIF logo after initial render\n");
+            printf("  --animate-duration <secs>      Seconds to animate (0 = until Ctrl+C)\n");
+            printf("  --bg <path>                    Render image as full-terminal background\n");
+            printf("  --no-bg                        Disable background image\n");
+            printf("  --theme <name>                 Set theme (boxed, classic, modern)\n");
+            printf("  --list-modules                 List all registered modules\n");
             return 0;
         }
     }
@@ -227,6 +262,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < g_config.plugin_count; i++) {
         module_manager_load_plugin(g_config.plugin_paths[i]);
     }
+
+    /* Auto-load plugins from user and system module directories */
+    module_manager_load_from_dirs();
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--list-modules") == 0) {
@@ -272,9 +310,12 @@ int main(int argc, char *argv[]) {
     char val_buffers[MAX_MODULES][MAX_VAL_LEN];
     int result_count = 0;
 
+    int active_indices[MAX_MODULES];
+    int active_count = 0;
+
     for (int i = 0; i < module_manager_get_count(); i++) {
         Module *m = module_manager_get(i);
-        val_buffers[result_count][0] = '\0';
+        val_buffers[i][0] = '\0';
 
         /* If the config specifies a module list, skip anything not in it */
         if (g_config.enabled_module_count > 0) {
@@ -292,18 +333,52 @@ int main(int argc, char *argv[]) {
             if (!allowed) continue;
         }
 
-        if (m->detect) {
-            m->detect(val_buffers[result_count], MAX_VAL_LEN);
-        }
+        active_indices[active_count++] = i;
+    }
 
-        if (val_buffers[result_count][0] == '\0' ||
-            strcmp(val_buffers[result_count], "Unknown") == 0 ||
-            strcmp(val_buffers[result_count], "N/A") == 0) {
+#ifndef _WIN32
+    pthread_t threads[MAX_MODULES];
+    ModuleWorkerTask tasks[MAX_MODULES];
+
+    for (int k = 0; k < active_count; k++) {
+        int idx = active_indices[k];
+        Module *m = module_manager_get(idx);
+        tasks[k].detect = m ? m->detect : NULL;
+        tasks[k].buf = val_buffers[idx];
+        tasks[k].max_len = MAX_VAL_LEN;
+
+        if (tasks[k].detect) {
+            pthread_create(&threads[k], NULL, module_worker_runner, &tasks[k]);
+        }
+    }
+
+    for (int k = 0; k < active_count; k++) {
+        Module *m = module_manager_get(active_indices[k]);
+        if (m && m->detect) {
+            pthread_join(threads[k], NULL);
+        }
+    }
+#else
+    for (int k = 0; k < active_count; k++) {
+        int idx = active_indices[k];
+        Module *m = module_manager_get(idx);
+        if (m && m->detect) {
+            m->detect(val_buffers[idx], MAX_VAL_LEN);
+        }
+    }
+#endif
+
+    for (int k = 0; k < active_count; k++) {
+        int idx = active_indices[k];
+        Module *m = module_manager_get(idx);
+        if (val_buffers[idx][0] == '\0' ||
+            strcmp(val_buffers[idx], "Unknown") == 0 ||
+            strcmp(val_buffers[idx], "N/A") == 0) {
             continue;
         }
 
         results[result_count].key = m->name;
-        results[result_count].val = val_buffers[result_count];
+        results[result_count].val = val_buffers[idx];
         result_count++;
     }
 
@@ -324,12 +399,73 @@ int main(int argc, char *argv[]) {
     /* Delegate presentation rendering to the active Presenter Plugin/Theme */
     /* Render background image first if configured (renders behind fetch output) */
     if (g_config.background_image_path[0] != '\0') {
-        render_background(g_config.background_image_path);
+        /*
+         * render_background() needs to know how many rows the frame we're
+         * about to draw actually needs, so it can capture at least that
+         * many background rows instead of clamping to the current
+         * terminal height (see the comment in render_background() for why
+         * that clamp was leaving later rows with no background at all).
+         *
+         * Each presenter wraps `result_count` data rows in a few extra
+         * decorative rows of its own -- boxed adds the most (top border,
+         * header, divider, optional color-bar row, bottom border = +5),
+         * classic and modern add fewer. Since the active theme is just a
+         * config string here, add the boxed worst case (+5) unconditionally
+         * rather than special-casing each theme name; a few possibly-unused
+         * extra background rows cost nothing but a couple more chafa output
+         * lines, while under-counting is what causes the uncolored-row bug.
+         */
+        int content_rows = result_count + 5;
+        if (logo_count > content_rows) content_rows = logo_count;
+        render_background(g_config.background_image_path, content_rows);
     }
 
     presenter_render(logo_lines, logo_count, max_logo_width,
                      results, result_count,
                      user_host, sep);
+
+#ifndef _WIN32
+    /* --- Animated GIF logo ---------------------------------------------------
+     * If the user requested animation (--animate or config logo_animate:true)
+     * and the logo is a GIF, play the animation in-place in the logo area.
+     * The info text panel to the right is untouched during playback.
+     * logo_gif_animate() blocks until duration_secs elapses or the user
+     * presses Ctrl+C; it also handles cursor hide/restore automatically. */
+    if (g_config.logo_animate && g_config.logo_is_image && logo_count > 0
+            && g_config.custom_logo_path[0] != '\0') {
+        /* Quick extension check for .gif without adding a new header */
+        const char *_lp  = g_config.custom_logo_path;
+        const char *_dot = strrchr(_lp, '.');
+        int _is_gif = 0;
+        if (_dot) {
+            const char *_e = _dot + 1;
+            char _lo[5] = {0};
+            for (int _i = 0; _i < 4 && _e[_i]; _i++)
+                _lo[_i] = (char)((_e[_i] >= 'A' && _e[_i] <= 'Z') ? _e[_i] + 32 : _e[_i]);
+            _is_gif = (strcmp(_lo, "gif") == 0);
+        }
+        if (_is_gif) {
+            int _lw = g_config.logo_width > 0 ? g_config.logo_width : 32;
+            logo_gif_animate(_lp, _lw, logo_count, g_config.logo_animate_duration);
+        }
+    }
+#endif
+
+    /* Ensure all output is flushed and the cursor is visible before exiting.
+       The chafa background renderer (or a plugin) may have emitted cursor-hide
+       sequences (\033[?25l) that were never restored, leaving the terminal
+       without a visible cursor. \033[?25h forces it back on. Only done when
+       stdout is a real terminal so piped/redirected output stays clean. */
+    fflush(stdout);
+#ifdef _WIN32
+    if (_isatty(_fileno(stdout)))
+#else
+    if (isatty(STDOUT_FILENO))
+#endif
+    {
+        fputs("\033[?25h", stdout);
+        fflush(stdout);
+    }
 
     module_manager_cleanup();
     return 0;

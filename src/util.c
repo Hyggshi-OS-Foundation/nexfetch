@@ -117,3 +117,72 @@ void util_expand_escapes(char *str) {
     }
     *dst = '\0';
 }
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#ifdef _WIN32
+#include <direct.h>
+#define sys_mkdir(path) _mkdir(path)
+#else
+#include <unistd.h>
+#define sys_mkdir(path) mkdir(path, 0755)
+#endif
+
+int util_mkdir_p(const char *path) {
+    if (!path || !*path) return -1;
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    size_t len = strlen(tmp);
+    if (len == 0) return -1;
+
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            char c = *p;
+            *p = '\0';
+            sys_mkdir(tmp);
+            *p = c;
+        }
+    }
+    return sys_mkdir(tmp);
+}
+
+int util_copy_file(const char *src, const char *dst) {
+    if (!src || !dst) return -1;
+    FILE *in = fopen(src, "rb");
+    if (!in) return -1;
+    FILE *out = fopen(dst, "wb");
+    if (!out) {
+        fclose(in);
+        return -1;
+    }
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        fwrite(buf, 1, n, out);
+    }
+    fclose(in);
+    fclose(out);
+    return 0;
+}
+
+int util_get_user_config_dir(char *out, size_t size) {
+    if (!out || size == 0) return -1;
+    const char *xdg = getenv("XDG_CONFIG_HOME");
+    if (xdg && *xdg) {
+        snprintf(out, size, "%s/nexfetch", xdg);
+        return 0;
+    }
+    const char *home = getenv("HOME");
+    if (home && *home) {
+        snprintf(out, size, "%s/.config/nexfetch", home);
+        return 0;
+    }
+#ifdef _WIN32
+    const char *appdata = getenv("APPDATA");
+    if (appdata && *appdata) {
+        snprintf(out, size, "%s/nexfetch", appdata);
+        return 0;
+    }
+#endif
+    return -1;
+}

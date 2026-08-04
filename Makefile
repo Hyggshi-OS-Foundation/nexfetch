@@ -27,7 +27,7 @@ else
         PLATFORM_SRC = platform/windows/platform_windows.c
     else
         TARGET = nexfetch
-        LDFLAGS ?= -ldl
+        LDFLAGS ?= -ldl -lpthread
         PLATFORM_SRC = platform/linux/os.c \
                        platform/linux/kernel.c \
                        platform/linux/host.c \

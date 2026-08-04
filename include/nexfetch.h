@@ -19,6 +19,8 @@ typedef struct NexfetchConfig {
     int  logo_is_image;                /* 1 = PNG/JPG/GIF → convert via chafa; 0 = .txt */
     int  logo_is_video;                /* 1 = MP4 → extract first frame via ffmpeg, then chafa */
     int  logo_width;                   /* columns for chafa conversion (0 = auto 32) */
+    int  logo_animate;                 /* 1 = animate GIF logos in-place after initial render */
+    int  logo_animate_duration;        /* seconds to animate; 0 = loop until Ctrl+C */
     char distro_id[64];
     int color_blocks;
     char theme[64];                    /* active presentation theme: "boxed", "classic", "modern" */

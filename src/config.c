@@ -14,6 +14,8 @@ NexfetchConfig g_config = {
     .logo_is_image          = 0,
     .logo_is_video          = 0,
     .logo_width             = 0,
+    .logo_animate           = 0,
+    .logo_animate_duration  = 0,
     .distro_id              = "tux",
     .color_blocks           = 1,
     .theme                  = "boxed",
@@ -124,12 +126,67 @@ static void json_parse_modules_array(const char *json) {
 }
 
 void config_init(void) {
-    char buf[4096] = "";
-    /* Try local config first, then system-wide locations */
-    if (!util_read_file_content("config/config.json", buf, sizeof(buf))) {
-        if (!util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
-            if (!util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf)))
-                return;
+    char buf[8192] = "";
+    char user_dir[512] = "";
+    char user_cfg[512] = "";
+    char user_mod_dir[512] = "";
+    int loaded = 0;
+
+    if (util_get_user_config_dir(user_dir, sizeof(user_dir)) == 0) {
+        snprintf(user_cfg, sizeof(user_cfg), "%s/config.json", user_dir);
+        snprintf(user_mod_dir, sizeof(user_mod_dir), "%s/modules", user_dir);
+
+        /* Automatically create user config and module directories */
+        util_mkdir_p(user_dir);
+        util_mkdir_p(user_mod_dir);
+
+        /* Auto-initialize user config.json if missing */
+        FILE *chk = fopen(user_cfg, "r");
+        if (chk) {
+            fclose(chk);
+        } else {
+            /* Try copying system or local default config */
+            if (util_copy_file("config/config.json", user_cfg) != 0) {
+                if (util_copy_file("/etc/nexfetch/config.json", user_cfg) != 0) {
+                    if (util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) != 0) {
+                        /* Fall back to writing default template */
+                        FILE *fw = fopen(user_cfg, "w");
+                        if (fw) {
+                            fputs("{\n"
+                                  "  \"show_logo\": true,\n"
+                                  "  \"color_blocks\": true,\n"
+                                  "  \"theme\": \"boxed\",\n"
+                                  "  \"logo\": \"\",\n"
+                                  "  \"logo_width\": 32,\n"
+                                  "  \"background_image\": \"\",\n"
+                                  "  \"plugins\": [],\n"
+                                  "  \"modules\": [\n"
+                                  "    \"os\", \"kernel\", \"host\", \"uptime\", \"packages\", \"display\",\n"
+                                  "    \"shell\", \"de\", \"wm\", \"terminal\", \"cpu\", \"gpu\",\n"
+                                  "    \"memory\", \"disk\", \"swap\", \"battery\", \"network\",\n"
+                                  "    \"theme\", \"icons\", \"font\", \"locale\"\n"
+                                  "  ]\n"
+                                  "}\n", fw);
+                            fclose(fw);
+                        }
+                    }
+                }
+            }
+        }
+
+        /* 1. High priority: User config file */
+        if (util_read_file_content(user_cfg, buf, sizeof(buf))) {
+            loaded = 1;
+        }
+    }
+
+    /* Fallback search order if user config couldn't be loaded */
+    if (!loaded) {
+        if (!util_read_file_content("config/config.json", buf, sizeof(buf))) {
+            if (!util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
+                if (!util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf)))
+                    return;
+            }
         }
     }
 
@@ -181,6 +238,21 @@ void config_init(void) {
 
     /* Parse the plugin path list */
     json_parse_plugins_array(buf);
+
+    /* Animated GIF logo settings */
+    if (strstr(buf, "\"logo_animate\": true") || strstr(buf, "\"logo_animate\":true"))
+        g_config.logo_animate = 1;
+
+    {
+        const char *k = strstr(buf, "\"logo_animate_duration\"");
+        if (k) {
+            const char *col = strchr(k, ':');
+            if (col) {
+                int d = atoi(col + 1);
+                if (d >= 0) g_config.logo_animate_duration = d;
+            }
+        }
+    }
 }
 
 /*

@@ -76,17 +76,62 @@ size_t ansi_visible_length(const char *str) {
 }
 
 /*
- * ansi_slice_columns() extracts the byte range of `src` that renders as the
- * visible-column window [start_col, start_col + width), preserving any SGR
- * color/attribute codes so the slice still carries the right colors when
- * printed on its own, and writes it (NUL-terminated, with a trailing reset)
- * into `out`.
+ * Sequential-scan cache for ansi_slice_columns_ex().
  *
- * This exists so a caller can pull an exact, already-rendered slice of one
- * line (e.g. a captured background image row) and reuse it verbatim in place
- * of blank padding elsewhere. Truncates silently if `out` is too small.
+ * presenter.c always requests slices of the SAME captured background row
+ * (same `src` pointer into s_bg_lines[row]) in strictly increasing column
+ * order while it builds one output row -- key, then " : ", then value,
+ * then right-padding, each call's start_col picking up where the previous
+ * one's window ended. Only once a row is fully built does presenter.c move
+ * on to a different row's `src` pointer.
+ *
+ * Without this cache, every one of those calls re-walks `src` from byte 0,
+ * re-parsing every ANSI escape it has already parsed in prior calls for
+ * that same row. That's O(fields_per_row * row_bytes) work per row instead
+ * of O(row_bytes) -- and row_bytes can be large, since a densely-colored
+ * captured background row carries a full truecolor SGR sequence (~20
+ * bytes) per visible cell.
+ *
+ * Caching the last (src, column, byte-offset) reached lets a call that
+ * continues forward on the same src resume scanning from there instead of
+ * from the start. A call with a different `src`, or a start_col that goes
+ * backward relative to the cached column, simply falls back to scanning
+ * from byte 0 as before -- correctness never depends on the cache hitting.
  */
-void ansi_slice_columns(const char *src, size_t start_col, size_t width, char *out, size_t out_size) {
+static struct {
+    const char *src;
+    size_t col;
+    size_t byte_offset;
+} s_scan_cache = { NULL, 0, 0 };
+
+/*
+ * ansi_slice_columns_ex() extracts the byte range of `src` that renders as
+ * the visible-column window [start_col, start_col + width), preserving any
+ * SGR color/attribute codes so the slice still carries the right colors
+ * when printed on its own, and writes it (NUL-terminated) into `out`.
+ *
+ * `append_reset` controls whether a trailing "\033[0m" is appended:
+ *
+ *   - append_reset = 1: behaves like the original ansi_slice_columns() --
+ *     used wherever the slice is meant to be a self-contained, fully closed
+ *     span (padding gaps via strcat_forward()/pad_logo_column(), where
+ *     nothing colored is drawn immediately after and any leftover SGR state
+ *     should not leak into whatever comes next).
+ *
+ *   - append_reset = 0: the slice's background color is left ACTIVE in the
+ *     terminal's current SGR state after printing. This is required by
+ *     overlay_text() in presenter.c, whose entire technique depends on the
+ *     redrawn background color still being live when it prints field text
+ *     on top with a foreground-only color code -- if this function appended
+ *     "\033[0m" here, that reset would fire the instant before the overlay
+ *     text is drawn, wiping the real image color back to the terminal's
+ *     flat default background and reproducing the exact "opaque block
+ *     behind every field" bug this whole mechanism exists to avoid.
+ *
+ * Truncates silently if `out` is too small.
+ */
+void ansi_slice_columns_ex(const char *src, size_t start_col, size_t width,
+                            char *out, size_t out_size, int append_reset) {
     if (!out || out_size == 0) return;
     out[0] = '\0';
     if (!src || width == 0 || out_size < 2) return;
@@ -95,6 +140,13 @@ void ansi_slice_columns(const char *src, size_t start_col, size_t width, char *o
     size_t out_len = 0;
     size_t cols_written = 0; /* visible columns actually copied into `out` */
     const unsigned char *p = (const unsigned char *)src;
+
+    /* Resume from the cached scan position if this call continues forward
+     * over the same source string the previous call was scanning. */
+    if (s_scan_cache.src == src && start_col >= s_scan_cache.col) {
+        col = s_scan_cache.col;
+        p = (const unsigned char *)src + s_scan_cache.byte_offset;
+    }
 
     while (*p) {
         if (col >= start_col + width) break;
@@ -151,23 +203,50 @@ void ansi_slice_columns(const char *src, size_t start_col, size_t width, char *o
     /*
      * If `src` ran out (or its captured content simply didn't extend far
      * enough) before the requested [start_col, start_col+width) window was
-     * fully covered, cols_written < width here. Previously that meant the
-     * caller got back a string of pure leftover color-escape codes with NO
-     * visible characters at all -- bg_slice() still reported success, so
-     * that span of the row was silently left undrawn (whatever was already
-     * on screen from the earlier full background print just showed through
-     * unchanged, or nothing at all), which is exactly the flat/undetailed
-     * rectangles seen in practice. Pad the shortfall with plain spaces so
-     * the slice always visually fills its full requested width -- inheriting
-     * whatever color state the carried-over escape codes already set, so it
-     * reads as a solid block of the last-known color rather than a hole.
+     * fully covered, cols_written < width here. Pad the shortfall with
+     * plain spaces so the slice always visually fills its full requested
+     * width -- inheriting whatever color state the carried-over escape
+     * codes already set, so it reads as a solid block of the last-known
+     * color rather than a hole.
      */
     for (; cols_written < width && out_len + 1 < out_size - 1; cols_written++) {
         out[out_len++] = ' ';
     }
 
     out[out_len] = '\0';
-    if (out_len > 0) {
+    if (append_reset && out_len > 0) {
         strncat(out, "\033[0m", out_size - out_len - 1);
     }
+
+    /* Save scan position so the next call, if it continues forward on this
+     * same `src`, can resume instead of rescanning from byte 0. */
+    s_scan_cache.src = src;
+    s_scan_cache.col = col;
+    s_scan_cache.byte_offset = (size_t)((const char *)p - src);
+}
+
+/*
+ * ansi_slice_columns() -- original signature, kept for any other caller.
+ * Always appends the trailing reset (append_reset = 1).
+ */
+void ansi_slice_columns(const char *src, size_t start_col, size_t width, char *out, size_t out_size) {
+    ansi_slice_columns_ex(src, start_col, width, out, out_size, 1);
+}
+
+/*
+ * ansi_slice_scan_reset() clears the sequential-scan cache above.
+ *
+ * The cache matches purely on the `src` pointer value, and s_bg_lines[]'s
+ * row buffers live at fixed static addresses for the whole process. If
+ * render_background() is ever invoked more than once in the same run
+ * (e.g. a future --watch/live-reload mode), a stale cache entry could
+ * otherwise match a new call's `src` by address while its byte_offset
+ * still refers to the PREVIOUS frame's content at that address, resuming
+ * a scan from the wrong point. presenter.c calls this at the start of
+ * every render_background() so each captured frame always starts clean.
+ */
+void ansi_slice_scan_reset(void) {
+    s_scan_cache.src = NULL;
+    s_scan_cache.col = 0;
+    s_scan_cache.byte_offset = 0;
 }

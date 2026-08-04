@@ -20,6 +20,7 @@ typedef struct Module {
 void module_manager_init(void);
 void module_manager_register(const char *name, const char *key, void (*detect)(char *, size_t));
 int module_manager_load_plugin(const char *so_path);
+void module_manager_load_from_dirs(void);
 void module_manager_run_all(void);
 int module_manager_get_count(void);
 Module *module_manager_get(int index);
