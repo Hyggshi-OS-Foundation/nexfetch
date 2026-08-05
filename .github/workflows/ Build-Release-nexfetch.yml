@@ -1,0 +1,326 @@
+name: Build & Release nexfetch
+
+# Triggers on tag push like v1.0.0, or manual run from the Actions tab
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.0.0), only used for manual runs"
+        required: false
+        default: "0.0.0-dev"
+
+env:
+  PKG_NAME: nexfetch
+  MAINTAINER: "Hyggshi OS Foundation <hyggshidev@gmail.com>"
+  DESCRIPTION: "Modern, modular system information tool for Linux"
+  HOMEPAGE: "https://github.com/Hyggshi-OS-Foundation/nexfetch"
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1) Resolve version, shared by all downstream jobs
+  # ------------------------------------------------------------------
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------
+  # 2) Build binary — native for amd64/arm64, cross-compiled for armhf
+  # ------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            cc: gcc
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cc: gcc
+          - arch: armhf
+            runner: ubuntu-latest
+            cc: arm-linux-gnueabihf-gcc
+            cross_pkg: gcc-arm-linux-gnueabihf
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Install cross-compiler (if needed)
+        if: matrix.cross_pkg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cross_pkg }}
+
+      - name: Build
+        run: |
+          make clean || true
+          make -j"$(nproc)" CC=${{ matrix.cc }}
+
+      - name: Install into staging dir (DESTDIR)
+        run: |
+          mkdir -p staging
+          make install DESTDIR="$PWD/staging" PREFIX=/usr CC=${{ matrix.cc }}
+
+      - name: Package generic tarball (.tar.gz)
+        run: |
+          tar -C staging -czf ${PKG_NAME}-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz usr etc
+
+      - name: Upload staging dir (used by later packaging jobs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-${{ matrix.arch }}
+          path: staging/
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  # ------------------------------------------------------------------
+  # 3) Package .deb and .rpm with fpm (reusing the staging dir built above)
+  # ------------------------------------------------------------------
+  package-deb-rpm:
+    name: Package deb/rpm (${{ matrix.arch }})
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, armhf]
+    steps:
+      - name: Download staging dir
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-${{ matrix.arch }}
+          path: staging
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential rpm
+          sudo gem install --no-document fpm
+
+      - name: Map arch name for rpm
+        id: rpmarch
+        run: |
+          case "${{ matrix.arch }}" in
+            amd64) echo "arch=x86_64" >> "$GITHUB_OUTPUT" ;;
+            arm64) echo "arch=aarch64" >> "$GITHUB_OUTPUT" ;;
+            armhf) echo "arch=armv7hl" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Build .deb (Debian/Ubuntu/Mint...)
+        run: |
+          fpm -s dir -t deb \
+            -n "$PKG_NAME" -v "${{ needs.version.outputs.version }}" \
+            -a ${{ matrix.arch }} \
+            --maintainer "$MAINTAINER" \
+            --description "$DESCRIPTION" \
+            --url "$HOMEPAGE" \
+            --license GPL-3.0 \
+            --category utils \
+            --deb-recommends chafa \
+            -C staging usr etc
+
+      - name: Build .rpm (Fedora/openSUSE/RHEL...)
+        run: |
+          fpm -s dir -t rpm \
+            -n "$PKG_NAME" -v "${{ needs.version.outputs.version }}" \
+            -a ${{ steps.rpmarch.outputs.arch }} \
+            --maintainer "$MAINTAINER" \
+            --description "$DESCRIPTION" \
+            --url "$HOMEPAGE" \
+            --license GPLv3 \
+            --category "System/Utilities" \
+            --rpm-autoreqprov \
+            -C staging usr etc
+
+      - name: Upload .deb/.rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-deb-rpm-${{ matrix.arch }}
+          path: |
+            *.deb
+            *.rpm
+
+  # ------------------------------------------------------------------
+  # 4) Package for Arch Linux (.pkg.tar.zst) using makepkg
+  # ------------------------------------------------------------------
+  package-arch:
+    name: Package Arch (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Install build tools + create a regular user (makepkg refuses to run as root)
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git sudo
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Prepare build dir + PKGBUILD
+        run: |
+          mkdir -p /home/builder/pkg
+          cp -r src/. /home/builder/pkg/src
+          cat > /home/builder/pkg/PKGBUILD << EOF
+          pkgname=${PKG_NAME}
+          pkgver=${{ needs.version.outputs.version }}
+          pkgrel=1
+          pkgdesc="${DESCRIPTION}"
+          arch=('${{ matrix.arch }}')
+          url="${HOMEPAGE}"
+          license=('GPL3')
+          depends=()
+          optdepends=('chafa: display logo as an image')
+          options=(!debug)
+
+          build() {
+            cd "\$srcdir/src"
+            make clean || true
+            make -j"\$(nproc)"
+          }
+
+          package() {
+            cd "\$srcdir/src"
+            make install DESTDIR="\$pkgdir" PREFIX=/usr
+          }
+          EOF
+          chown -R builder:builder /home/builder/pkg
+
+      - name: makepkg
+        run: |
+          cd /home/builder/pkg
+          sudo -u builder makepkg -f --noconfirm --skipinteg
+
+      - name: Upload Arch package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-arch-${{ matrix.arch }}
+          path: /home/builder/pkg/*.pkg.tar.zst
+
+  # ------------------------------------------------------------------
+  # 5) Package AppImage (runs on almost any distro, no install needed)
+  # ------------------------------------------------------------------
+  package-appimage:
+    name: Package AppImage (${{ matrix.arch }})
+    needs: [version, build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            appimage_arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            appimage_arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Download staging dir
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-${{ matrix.arch }}
+          path: staging
+
+      - name: Download linuxdeploy
+        run: |
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.appimage_arch }}.AppImage"
+          chmod +x "linuxdeploy-${{ matrix.appimage_arch }}.AppImage"
+
+      - name: Build AppDir
+        run: |
+          mkdir -p AppDir
+          cp -r staging/usr AppDir/
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cat > AppDir/usr/share/applications/${PKG_NAME}.desktop << EOF
+          [Desktop Entry]
+          Name=nexfetch
+          Comment=${DESCRIPTION}
+          Exec=nexfetch
+          Icon=nexfetch
+          Type=Application
+          Categories=Utility;System;
+          Terminal=true
+          EOF
+          if [ -f logos/nexfetch.png ]; then
+            cp logos/nexfetch.png AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png
+          else
+            # placeholder icon — replace with a real 256x256 PNG icon when available
+            convert -size 256x256 xc:black AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png 2>/dev/null || \
+            touch AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png
+          fi
+
+      - name: Build AppImage
+        run: |
+          export ARCH=${{ matrix.appimage_arch }}
+          export VERSION=${{ needs.version.outputs.version }}
+          ./linuxdeploy-${{ matrix.appimage_arch }}.AppImage \
+            --appdir AppDir \
+            --desktop-file AppDir/usr/share/applications/${PKG_NAME}.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png \
+            --output appimage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-appimage-${{ matrix.arch }}
+          path: "*.AppImage"
+
+  # ------------------------------------------------------------------
+  # 6) Collect all artifacts and create a GitHub Release (tag push only)
+  # ------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, build, package-deb-rpm, package-arch, package-appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files to release
+        run: ls -la dist
+
+      - name: Create release + upload files
+        uses: softprops/action-gh-release@v2
+        with:
+          name: nexfetch ${{ needs.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
