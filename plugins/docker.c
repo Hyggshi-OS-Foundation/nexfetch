@@ -4,11 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 const char *plugin_name = "Vision Docker";
 const char *plugin_key  = "vision_docker";
 
+#ifndef _WIN32
 static void trim(char *s)
 {
     size_t len = strlen(s);
@@ -96,7 +100,19 @@ static int count_json_array_items(const char *json) {
     }
     return count;
 }
+#endif /* !_WIN32 */
 
+#ifdef _WIN32
+/* Docker Desktop on Windows serves the same API over a named pipe
+   (\\.\pipe\docker_engine) instead of a Unix domain socket, so the POSIX
+   AF_UNIX query above doesn't carry over as-is. Not implemented yet --
+   report the plugin as unsupported here rather than shipping an untested
+   named-pipe client. */
+void plugin_detect(char *out, size_t max_len)
+{
+    snprintf(out, max_len, "Not supported on Windows");
+}
+#else
 void plugin_detect(char *out, size_t max_len)
 {
     if (access("/var/run/docker.sock", F_OK) != 0 &&
@@ -151,3 +167,5 @@ void plugin_detect(char *out, size_t max_len)
         image_count
     );
 }
+
+#endif /* _WIN32 */
