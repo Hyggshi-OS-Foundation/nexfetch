@@ -7,24 +7,29 @@ ifeq ($(OS),Windows_NT)
     TARGET = nexfetch.exe
     LDFLAGS ?=
     PLATFORM_SRC = platform/windows/platform_windows.c
+    RDYNAMIC_FLAGS = -Wl,--export-all-symbols
 else
     UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
     ifeq ($(UNAME_S),Darwin)
         TARGET = nexfetch
         LDFLAGS ?=
         PLATFORM_SRC = platform/macos/platform_macos.c
+        RDYNAMIC_FLAGS = -rdynamic
     else ifeq ($(findstring MINGW,$(UNAME_S)),MINGW)
         TARGET = nexfetch.exe
         LDFLAGS ?=
         PLATFORM_SRC = platform/windows/platform_windows.c
+        RDYNAMIC_FLAGS = -Wl,--export-all-symbols
     else ifeq ($(findstring MSYS,$(UNAME_S)),MSYS)
         TARGET = nexfetch.exe
         LDFLAGS ?=
         PLATFORM_SRC = platform/windows/platform_windows.c
+        RDYNAMIC_FLAGS = -Wl,--export-all-symbols
     else ifeq ($(findstring CYGWIN,$(UNAME_S)),CYGWIN)
         TARGET = nexfetch.exe
         LDFLAGS ?=
         PLATFORM_SRC = platform/windows/platform_windows.c
+        RDYNAMIC_FLAGS = -Wl,--export-all-symbols
     else
         TARGET = nexfetch
         LDFLAGS ?= -ldl -lpthread
@@ -44,6 +49,7 @@ else
                        platform/linux/locale.c \
                        platform/linux/swap.c \
                        platform/linux/display.c
+        RDYNAMIC_FLAGS = -rdynamic
     endif
 endif
 
@@ -95,7 +101,7 @@ OBJ = $(SRC:.c=.o)
 all: $(TARGET) $(PLUGIN_TARGETS)
 
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -rdynamic -o $@ $(OBJ) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(RDYNAMIC_FLAGS) -o $@ $(OBJ) $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
