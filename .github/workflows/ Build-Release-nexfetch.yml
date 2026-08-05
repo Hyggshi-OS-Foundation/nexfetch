@@ -31,10 +31,13 @@ jobs:
       - id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            RAW="${{ github.event.inputs.version }}"
           else
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            RAW="${GITHUB_REF_NAME#v}"
           fi
+          # Sanitize: rpm and Arch's pkgver don't allow hyphens/colons/whitespace
+          SAFE=$(echo "$RAW" | sed -E 's/[-:[:space:]]+/./g')
+          echo "version=$SAFE" >> "$GITHUB_OUTPUT"
 
   # ------------------------------------------------------------------
   # 2) Build binary — native for amd64/arm64, cross-compiled for armhf
@@ -162,20 +165,15 @@ jobs:
 
   # ------------------------------------------------------------------
   # 4) Package for Arch Linux (.pkg.tar.zst) using makepkg
+  #    NOTE: the official archlinux:latest image is only published for
+  #    linux/amd64, so this only produces an x86_64 package. If Arch ever
+  #    publishes an arm64 image this can go back to a matrix.
   # ------------------------------------------------------------------
   package-arch:
-    name: Package Arch (${{ matrix.arch }})
+    name: Package Arch (x86_64)
     needs: version
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     container: archlinux:latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
     steps:
       - name: Install build tools + create a regular user (makepkg refuses to run as root)
         run: |
@@ -197,7 +195,7 @@ jobs:
           pkgver=${{ needs.version.outputs.version }}
           pkgrel=1
           pkgdesc="${DESCRIPTION}"
-          arch=('${{ matrix.arch }}')
+          arch=('x86_64')
           url="${HOMEPAGE}"
           license=('GPL3')
           depends=()
@@ -225,7 +223,7 @@ jobs:
       - name: Upload Arch package
         uses: actions/upload-artifact@v4
         with:
-          name: pkg-arch-${{ matrix.arch }}
+          name: pkg-arch-x86_64
           path: /home/builder/pkg/*.pkg.tar.zst
 
   # ------------------------------------------------------------------
@@ -260,6 +258,9 @@ jobs:
           wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.appimage_arch }}.AppImage"
           chmod +x "linuxdeploy-${{ matrix.appimage_arch }}.AppImage"
 
+      - name: Install imagemagick (to normalize the icon size)
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Build AppDir
         run: |
           mkdir -p AppDir
@@ -275,12 +276,15 @@ jobs:
           Categories=Utility;System;
           Terminal=true
           EOF
+          ICON_OUT=AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png
           if [ -f logos/nexfetch.png ]; then
-            cp logos/nexfetch.png AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png
+            # linuxdeploy requires an exact 256x256 icon — force-normalize
+            # whatever resolution the source logo is (e.g. 768x768) to that.
+            convert logos/nexfetch.png -resize 256x256 -background none \
+              -gravity center -extent 256x256 "$ICON_OUT"
           else
             # placeholder icon — replace with a real 256x256 PNG icon when available
-            convert -size 256x256 xc:black AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png 2>/dev/null || \
-            touch AppDir/usr/share/icons/hicolor/256x256/apps/nexfetch.png
+            convert -size 256x256 xc:none "$ICON_OUT"
           fi
 
       - name: Build AppImage
