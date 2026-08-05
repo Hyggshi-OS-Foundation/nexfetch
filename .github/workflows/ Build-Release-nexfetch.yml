@@ -188,8 +188,11 @@ jobs:
 
       - name: Prepare build dir + PKGBUILD
         run: |
-          mkdir -p /home/builder/pkg
-          cp -r src/. /home/builder/pkg/src
+          # Copy the checked-out source into its own dir, kept OUTSIDE
+          # makepkg's srcdir (pkg/src) — makepkg wipes/recreates srcdir
+          # before build(), so anything placed there would be deleted.
+          mkdir -p /home/builder/repo /home/builder/pkg
+          cp -r "$GITHUB_WORKSPACE/src/." /home/builder/repo/
           cat > /home/builder/pkg/PKGBUILD << EOF
           pkgname=${PKG_NAME}
           pkgver=${{ needs.version.outputs.version }}
@@ -203,17 +206,17 @@ jobs:
           options=(!debug)
 
           build() {
-            cd "\$srcdir/src"
+            cd /home/builder/repo
             make clean || true
             make -j"\$(nproc)"
           }
 
           package() {
-            cd "\$srcdir/src"
+            cd /home/builder/repo
             make install DESTDIR="\$pkgdir" PREFIX=/usr
           }
           EOF
-          chown -R builder:builder /home/builder/pkg
+          chown -R builder:builder /home/builder/repo /home/builder/pkg
 
       - name: makepkg
         run: |
