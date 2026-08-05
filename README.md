@@ -35,44 +35,23 @@
 
 ## 📦 Installation
 
-### Option 1: APT (Debian/Ubuntu — recommended)
+Every tagged release publishes prebuilt packages to the [Releases page](https://github.com/Hyggshi-OS-Foundation/nexfetch/releases) for `amd64`, `arm64`, and `armhf`. Pick the method for your distro family below. If your distro isn't listed, use **Build from source**.
 
-Install nexfetch with a single command:
+| Distro family | Examples | Package | Arch coverage |
+| --- | --- | --- | --- |
+| Debian-base | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` | amd64, arm64, armhf |
+| RPM-base | Fedora, openSUSE, RHEL, CentOS | `.rpm` | amd64, arm64, armhf |
+| Arch-base | Arch Linux, Manjaro, EndeavourOS | `.pkg.tar.zst` | x86_64 only |
+| Any distro | — | `.AppImage` | amd64, arm64 |
+| **Gentoo, Void, Slackware, and any other base** | — | — | **Build from source** (compiler required) |
 
-```bash
-curl -sL https://raw.githubusercontent.com/Hyggshi-OS-Foundation/nexfetch/main/scripts/nexfetch-apt-setup.sh | sudo bash
-```
+### Debian-base (.deb)
 
-Or manually add the repository and install:
-
-```bash
-# Install prerequisites
-sudo apt install ca-certificates curl gnupg lsb-release
-
-# Add the GPG key
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://hyggshi-os-foundation.github.io/nexfetch/apt/repo-key.gpg \
-  | sudo gpg --dearmor -o /etc/apt/keyrings/nexfetch-archive-keyring.gpg
-
-# Add the repository
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nexfetch-archive-keyring.gpg] https://hyggshi-os-foundation.github.io/nexfetch/apt $(lsb_release -cs) main" \
-  | sudo tee /etc/apt/sources.list.d/nexfetch.list
-
-# Install
-sudo apt update
-sudo apt install nexfetch
-```
-
-After installation, run `nexfetch` from anywhere:
+Download the `.deb` matching your architecture from Releases, then:
 
 ```bash
-nexfetch
-```
-
-To update:
-
-```bash
-sudo apt update && sudo apt upgrade nexfetch
+sudo dpkg -i nexfetch_<version>_<arch>.deb
+sudo apt -f install   # resolve dependencies if needed
 ```
 
 To uninstall:
@@ -81,7 +60,48 @@ To uninstall:
 sudo apt remove nexfetch
 ```
 
-### Option 2: Build from source
+### RPM-base (.rpm)
+
+```bash
+sudo rpm -i nexfetch-<version>.<arch>.rpm
+# or, on dnf/zypper systems:
+sudo dnf install ./nexfetch-<version>.<arch>.rpm
+```
+
+To uninstall:
+
+```bash
+sudo rpm -e nexfetch
+```
+
+### Arch-base (.pkg.tar.zst)
+
+Only `x86_64` builds are published (the upstream `archlinux` build container doesn't ship an `aarch64` image). Download the package from Releases, then:
+
+```bash
+sudo pacman -U nexfetch-<version>-1-x86_64.pkg.tar.zst
+```
+
+To uninstall:
+
+```bash
+sudo pacman -R nexfetch
+```
+
+### AppImage (any distro, no install needed)
+
+Works on virtually any modern Linux distro without root or a package manager:
+
+```bash
+chmod +x nexfetch-<version>-x86_64.AppImage
+./nexfetch-<version>-x86_64.AppImage
+```
+
+*(use the `aarch64` AppImage on ARM64 systems)*
+
+### Build from source
+
+Required for **Gentoo, Void, Slackware, and any distro without a prebuilt package above** — and works everywhere else too if you'd rather not use a package manager.
 
 #### Prerequisites
 
@@ -555,6 +575,10 @@ make clean    # Remove build artifacts
 - **Linux** — Links with `-ldl` for dynamic plugin loading
 - **macOS** — Uses `platform/macos/platform_macos.c`
 - **Windows** — Uses `platform/windows/platform_windows.c`; builds `nexfetch.exe`
+
+### CI/CD
+
+Every push of a `v*` tag triggers `.github/workflows/release.yml`, which builds `amd64`/`arm64`/`armhf`, packages `.deb`, `.rpm`, an `x86_64` Arch package, and `amd64`/`arm64` AppImages, then publishes them all to GitHub Releases.
 
 ## 📜 License
 
