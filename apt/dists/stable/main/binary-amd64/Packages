@@ -2,14 +2,14 @@ Package: nexfetch
 Version: 1.0.0-1
 Architecture: amd64
 Maintainer: Hyggshi OS Foundation <hyggshidev@gmail.com>
-Installed-Size: 567
-Depends: libc6 (>= 2.34)
+Installed-Size: 1325
+Depends: libc6 (>= 2.38)
 Recommends: chafa
 Filename: pool/main/n/nexfetch/nexfetch_1.0.0-1_amd64.deb
-Size: 396606
-MD5sum: 64b73476a65d4dc9ac3c36b0124afb08
-SHA1: 389bd3f086b827ef7257876e936cf1a0f03a9e39
-SHA256: 20abaa2c2fcaab3693f5df363b98b3a397b915079c4de88e40e8850aae5aa23d
+Size: 1055440
+MD5sum: 10e018251282eb9592a861f0bbfc67e8
+SHA1: 695cb7efe1cc34ffcfc7bb799068ebe19f1b4d0e
+SHA256: 905d4fffa4951b9fa639d60322cc2055699ca05e0c7e7467b12ebbbad6169ac5
 Section: utils
 Priority: optional
 Homepage: https://github.com/Hyggshi-OS-Foundation/nexfetch
