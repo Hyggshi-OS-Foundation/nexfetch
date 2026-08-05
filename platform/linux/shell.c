@@ -8,6 +8,10 @@
 
 void platform_get_shell(char *out, size_t size) {
     if (!out || size == 0) return;
+
+    /* Try cache first -- shell version rarely changes between runs */
+    if (util_cache_read("shell", out, size)) return;
+
     const char *shell_env = getenv("SHELL");
     if (shell_env) {
         const char *name = strrchr(shell_env, '/');
@@ -27,6 +31,7 @@ void platform_get_shell(char *out, size_t size) {
             if (paren) *paren = '\0';
             util_trim(ver_clean);
             snprintf(out, size, "%s (%s)", name, ver_clean);
+            util_cache_write("shell", out);
             return;
         }
 
@@ -40,10 +45,10 @@ void platform_get_shell(char *out, size_t size) {
         } else {
             snprintf(out, size, "%s", name);
         }
+        util_cache_write("shell", out);
     } else {
         snprintf(out, size, "Unknown");
     }
 }
 
 #endif
-

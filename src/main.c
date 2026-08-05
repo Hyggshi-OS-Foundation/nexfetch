@@ -1,3 +1,11 @@
+#ifndef _WIN32
+/* Needed for pthread_timedjoin_np(), a glibc extension used to bound how
+   long we'll wait on any single module's detection thread (see
+   join_with_timeout() below). Must be defined before any system header
+   is pulled in. */
+#define _GNU_SOURCE
+#endif
+
 #include "nexfetch.h"
 #include "module.h"
 #include "platform.h"
@@ -18,6 +26,7 @@
 #include <pwd.h>
 #include <sys/ioctl.h>
 #include <pthread.h>
+#include <time.h>
 #endif
 
 extern void config_init(void);
@@ -63,6 +72,46 @@ static void *module_worker_runner(void *arg) {
         t->detect(t->buf, t->max_len);
     }
     return NULL;
+}
+
+/* Bound total run time so one misbehaving module -- a plugin waiting on a
+ * daemon socket, a subprocess fallback stuck on a slow D-Bus/dconf
+ * round-trip, an unreachable network share, etc. -- can never stall the
+ * whole program. Modules already run concurrently (one thread each), so
+ * this timeout is the ceiling on the ENTIRE run, not per-module-additive.
+ *
+ * On timeout we abandon the thread (detach it) rather than waiting
+ * further, and drop whatever partial data it wrote so it's simply skipped
+ * from the output, like any other module that came back empty. The
+ * detached thread keeps running invisibly in the background, but since it
+ * is never joined again, main() is free to finish and exit -- the process
+ * exit takes it down with it. */
+#define NEXFETCH_MODULE_TIMEOUT_MS 150
+
+static void compute_deadline(struct timespec *ts, int timeout_ms) {
+    clock_gettime(CLOCK_REALTIME, ts);
+    ts->tv_sec  += timeout_ms / 1000;
+    ts->tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (ts->tv_nsec >= 1000000000L) {
+        ts->tv_sec++;
+        ts->tv_nsec -= 1000000000L;
+    }
+}
+
+/* IMPORTANT: `deadline` must be ONE absolute point in time shared across
+ * every call in the join loop, not a fresh "timeout_ms from now" per
+ * thread. Modules are joined one at a time in a plain for-loop, so a
+ * per-thread relative timeout would let each slow module in turn eat up
+ * to timeout_ms more, stacking additively (N slow modules -> N *
+ * timeout_ms total) instead of bounding the whole run. Sharing one
+ * deadline means the *combined* time spent waiting across all modules is
+ * capped at timeout_ms, however many of them are slow. */
+static int join_with_deadline(pthread_t thread, const struct timespec *deadline) {
+    if (pthread_timedjoin_np(thread, NULL, deadline) != 0) {
+        pthread_detach(thread);
+        return -1;
+    }
+    return 0;
 }
 #endif
 
@@ -352,10 +401,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    struct timespec join_deadline;
+    compute_deadline(&join_deadline, NEXFETCH_MODULE_TIMEOUT_MS);
+
     for (int k = 0; k < active_count; k++) {
         Module *m = module_manager_get(active_indices[k]);
         if (m && m->detect) {
-            pthread_join(threads[k], NULL);
+            if (join_with_deadline(threads[k], &join_deadline) != 0) {
+                /* Timed out: discard whatever it may have partially written
+                   so it's treated the same as any other empty result. */
+                val_buffers[active_indices[k]][0] = '\0';
+            }
         }
     }
 #else

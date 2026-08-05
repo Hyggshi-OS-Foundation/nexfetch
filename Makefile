@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -O2
+CFLAGS ?= -Wall -Wextra -O3 -flto -fno-plt -fno-stack-protector -fomit-frame-pointer
 # Always ensure -Iinclude is present, even when CFLAGS is overridden by dpkg-buildpackage
 CFLAGS += -Iinclude
 

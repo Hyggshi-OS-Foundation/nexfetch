@@ -14,4 +14,10 @@ int util_mkdir_p(const char *path);
 int util_copy_file(const char *src, const char *dst);
 int util_get_user_config_dir(char *out, size_t size);
 
+/* --- Short-TTL cache for slow lookups (gsettings, dconf, subprocess probes) ---
+ * Returns 1 and fills out[] if a fresh (< TTL) cache entry exists, 0 otherwise.
+ * cache_write() stores a value for later reads. */
+int util_cache_read(const char *key, char *out, size_t size);
+void util_cache_write(const char *key, const char *value);
+
 #endif /* UTIL_H */

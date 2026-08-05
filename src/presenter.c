@@ -140,6 +140,65 @@ static void append_repeat_bounded(char *dst, size_t dst_size, const char *unit, 
 #define MAX_BOX_INNER_W 140
 
 /*
+ * Minimum sane inner width for the boxed theme -- below this the key/value
+ * columns and " : " separator can no longer fit meaningfully, so this is
+ * the floor even on a very narrow terminal.
+ */
+#define MIN_BOX_INNER_W 20
+
+/*
+ * get_presenter_terminal_width() mirrors main.c's get_terminal_width() --
+ * duplicated locally rather than shared, since main.c's copy is static and
+ * this file has no header to expose it through. Used to clamp box_inner_w
+ * (and truncate any field that would still overflow) so the boxed theme's
+ * fixed-width border can never be pushed wider than the real terminal,
+ * which is what was producing a broken/wrapped border on narrow terminals.
+ */
+static int get_presenter_terminal_width(void) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        if (width > 0) return width;
+    }
+#else
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+        return (int)ws.ws_col;
+#endif
+    const char *cols_env = getenv("COLUMNS");
+    if (cols_env && cols_env[0] != '\0') {
+        int c = atoi(cols_env);
+        if (c > 0) return c;
+    }
+    return 80;
+}
+
+/*
+ * truncate_visible() copies `src` into `out`, clipped to `max_w` visible
+ * columns (ANSI-aware via ansi_slice_columns()) with a trailing "…" if it
+ * had to cut anything off. Used to keep a field's value from overflowing
+ * a box_inner_w that had to be shrunk to fit a narrow terminal, instead of
+ * letting it wrap and break the border alignment.
+ */
+static void truncate_visible(const char *src, size_t max_w, char *out, size_t out_size) {
+    if (!src || !out || out_size == 0) return;
+    size_t vis = ansi_visible_length(src);
+    if (vis <= max_w) {
+        snprintf(out, out_size, "%s", src);
+        return;
+    }
+    if (max_w == 0) { out[0] = '\0'; return; }
+    if (max_w == 1) {
+        snprintf(out, out_size, "\xE2\x80\xA6" /* "…" */);
+        return;
+    }
+    char sliced[PRESENTER_LINE_BUF];
+    ansi_slice_columns(src, 0, max_w - 1, sliced, sizeof(sliced));
+    snprintf(out, out_size, "%s\xE2\x80\xA6", sliced);
+}
+
+/*
  * TEXT_MARGIN is a small guaranteed gap appended after each row's last
  * field in the unboxed presenters (classic, modern). It's filled via
  * strcat_forward()/bg_slice() -- an explicit redraw of the real captured
@@ -597,6 +656,35 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
 
     size_t logo_offset = g_config.show_logo ? (max_logo_width + LOGO_PADDING) : 0;
 
+    /*
+     * Clamp box_inner_w to what the real terminal can actually show. Without
+     * this, a long value (a verbose GPU name, a long distro string, etc.)
+     * pushes box_inner_w past the terminal's column count, the fixed-width
+     * "╭──...──╮" border no longer matches what actually fits on one row,
+     * and the row wraps -- visually breaking the box on narrow terminals.
+     */
+    {
+        int term_width = get_presenter_terminal_width();
+        int avail = term_width - (int)logo_offset - 2 /* "│" + "│" */;
+        if (avail < MIN_BOX_INNER_W) avail = MIN_BOX_INNER_W;
+
+        if ((int)box_inner_w > avail) {
+            box_inner_w = (size_t)avail;
+
+            size_t overhead = 3 + 2; /* " : " + " " lead + right pad slack */
+            if (box_inner_w > max_key_w + overhead) {
+                max_val_w = box_inner_w - max_key_w - overhead;
+            } else {
+                /* Key itself doesn't fit either -- split the available
+                   width between key and value instead of letting key
+                   consume it all. */
+                max_key_w = box_inner_w > overhead ? (box_inner_w - overhead) / 2 : 1;
+                max_val_w = box_inner_w > max_key_w + overhead
+                          ? box_inner_w - max_key_w - overhead : 1;
+            }
+        }
+    }
+
     static char info_lines[MAX_MODULES + 8][PRESENTER_LINE_BUF];
     memset(info_lines, 0, sizeof(info_lines));
     int info_count = 0;
@@ -615,7 +703,11 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
     char header_row[PRESENTER_LINE_BUF] = "";
     append_bounded(header_row, sizeof(header_row), "\033[49m\033[1;36m│\033[0m\033[49m ");
     size_t h_col = logo_offset + 2; /* "│ " */
-    overlay_text(header_row, sizeof(header_row), info_count, h_col, user_host_w, "\033[39m", user_host);
+    char user_host_trunc[PRESENTER_LINE_BUF];
+    size_t h_max_w = box_inner_w > 1 ? box_inner_w - 1 : 0;
+    truncate_visible(user_host, h_max_w, user_host_trunc, sizeof(user_host_trunc));
+    user_host_w = ansi_visible_length(user_host_trunc);
+    overlay_text(header_row, sizeof(header_row), info_count, h_col, user_host_w, "\033[39m", user_host_trunc);
     append_bounded(header_row, sizeof(header_row), "\033[49m");
     size_t h_vis_pad = box_inner_w > (user_host_w + 1) ? box_inner_w - (user_host_w + 1) : 0;
     strcat_forward(header_row, sizeof(header_row), h_vis_pad, info_count, h_col + user_host_w);
@@ -631,11 +723,22 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
     /* Data rows: │ OS         : Ubuntu 26.04   │ */
     for (int i = 0; i < result_count; i++) {
         char row[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m│\033[0m\033[49m ";
-        size_t kw = ansi_visible_length(results[i].key);
-        size_t vw = ansi_visible_length(results[i].val);
+
+        /* Truncate key/value to max_key_w/max_val_w -- these may have been
+         * shrunk below an individual field's natural width by the terminal-
+         * width clamp above. Without this, kw/vw could exceed max_key_w/
+         * max_val_w and "max_key_w - kw" below would underflow (size_t),
+         * producing a huge padding count and garbled output -- the exact
+         * kind of broken layout this fix is for. */
+        char key_trunc[PRESENTER_LINE_BUF];
+        char val_trunc[PRESENTER_LINE_BUF];
+        truncate_visible(results[i].key, max_key_w, key_trunc, sizeof(key_trunc));
+        truncate_visible(results[i].val, max_val_w, val_trunc, sizeof(val_trunc));
+        size_t kw = ansi_visible_length(key_trunc);
+        size_t vw = ansi_visible_length(val_trunc);
         size_t col = logo_offset + 2; /* "│ " */
 
-        overlay_text(row, sizeof(row), info_count, col, kw, COLOR_KEY, results[i].key);
+        overlay_text(row, sizeof(row), info_count, col, kw, COLOR_KEY, key_trunc);
         append_bounded(row, sizeof(row), "\033[49m" COLOR_RESET);
         col += kw;
 
@@ -646,7 +749,7 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
         append_bounded(row, sizeof(row), "\033[49m");
         col += 3;
 
-        overlay_text(row, sizeof(row), info_count, col, vw, COLOR_VALUE, results[i].val);
+        overlay_text(row, sizeof(row), info_count, col, vw, COLOR_VALUE, val_trunc);
         append_bounded(row, sizeof(row), "\033[49m" COLOR_RESET);
         col += vw;
 

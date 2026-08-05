@@ -48,7 +48,6 @@ static int get_gpu_sysfs(char *out, size_t size) {
             else if (strncmp(pci_id, "80ee", 4) == 0 || strncmp(pci_id, "80EE", 4) == 0) strcpy(vendor_name, "VirtualBox Graphics");
             else if (strncmp(pci_id, "1b36", 4) == 0 || strncmp(pci_id, "1B36", 4) == 0) strcpy(vendor_name, "QEMU VirtIO GPU");
 
-            /* Try reading sysfs label or device name if present */
             char label_path[512], label_str[128] = "";
             snprintf(label_path, sizeof(label_path), "/sys/bus/pci/devices/%s/label", ent->d_name);
             if (util_read_first_line(label_path, label_str, sizeof(label_str)) && label_str[0] != '\0') {
@@ -69,7 +68,11 @@ static int get_gpu_sysfs(char *out, size_t size) {
 void platform_get_gpu(char *out, size_t size) {
     if (!out || size == 0) return;
 
+    /* Try cache first -- GPU rarely changes between runs */
+    if (util_cache_read("gpu", out, size)) return;
+
     if (get_gpu_sysfs(out, size)) {
+        util_cache_write("gpu", out);
         return;
     }
 
@@ -99,14 +102,12 @@ void platform_get_gpu(char *out, size_t size) {
 
     if (!name || *name == '\0') {
         snprintf(out, size, "%s", line);
-        return;
+    } else {
+        char *rev = strstr(name, " (rev ");
+        if (rev) *rev = '\0';
+        snprintf(out, size, "%s", name);
     }
-
-    char *rev = strstr(name, " (rev ");
-    if (rev) *rev = '\0';
-
-    snprintf(out, size, "%s", name);
+    util_cache_write("gpu", out);
 }
 
 #endif
-

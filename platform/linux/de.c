@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 /* --- Desktop Environment -------------------------------------------------- */
 
@@ -37,20 +38,22 @@ static int get_de_version_from_dpkg(const char *pkg_name, char *ver_out, size_t 
 void platform_get_de(char *out, size_t size) {
     if (!out || size == 0) return;
 
+    /* Try cache first -- DE name+version essentially never changes between runs */
+    if (util_cache_read("de", out, size)) return;
+
     const char *xdg = getenv("XDG_CURRENT_DESKTOP");
     const char *session = getenv("DESKTOP_SESSION");
 
     if (xdg && xdg[0] != '\0') {
-        /* XDG_CURRENT_DESKTOP can be "ubuntu:GNOME" → strip prefix */
         const char *colon = strchr(xdg, ':');
         const char *de = colon ? colon + 1 : xdg;
 
-        /* Try to get version for well-known DEs */
         if (strstr(de, "GNOME") || strstr(de, "gnome")) {
             char ver[64] = "";
             if (get_de_version_from_dpkg("gnome-shell", ver, sizeof(ver)) ||
                 (util_execute_cmd("gnome-shell --version 2>/dev/null | awk '{print $NF}'", ver, sizeof(ver)) == 0 && ver[0] != '\0')) {
                 snprintf(out, size, "GNOME %s", ver);
+                util_cache_write("de", out);
                 return;
             }
         }
@@ -59,6 +62,7 @@ void platform_get_de(char *out, size_t size) {
             if (get_de_version_from_dpkg("plasmashell", ver, sizeof(ver)) ||
                 (util_execute_cmd("plasmashell --version 2>/dev/null | awk '{print $NF}'", ver, sizeof(ver)) == 0 && ver[0] != '\0')) {
                 snprintf(out, size, "KDE Plasma %s", ver);
+                util_cache_write("de", out);
                 return;
             }
         }
@@ -67,6 +71,7 @@ void platform_get_de(char *out, size_t size) {
             if (get_de_version_from_dpkg("xfce4-session", ver, sizeof(ver)) ||
                 (util_execute_cmd("xfce4-session --version 2>/dev/null | head -1 | awk '{print $NF}'", ver, sizeof(ver)) == 0 && ver[0] != '\0')) {
                 snprintf(out, size, "XFCE %s", ver);
+                util_cache_write("de", out);
                 return;
             }
         }
@@ -75,6 +80,7 @@ void platform_get_de(char *out, size_t size) {
             if (get_de_version_from_dpkg("mate-session", ver, sizeof(ver)) ||
                 (util_execute_cmd("mate-session --version 2>/dev/null | awk '{print $NF}'", ver, sizeof(ver)) == 0 && ver[0] != '\0')) {
                 snprintf(out, size, "MATE %s", ver);
+                util_cache_write("de", out);
                 return;
             }
         }
@@ -83,15 +89,18 @@ void platform_get_de(char *out, size_t size) {
             if (get_de_version_from_dpkg("cinnamon", ver, sizeof(ver)) ||
                 (util_execute_cmd("cinnamon --version 2>/dev/null | awk '{print $NF}'", ver, sizeof(ver)) == 0 && ver[0] != '\0')) {
                 snprintf(out, size, "Cinnamon %s", ver);
+                util_cache_write("de", out);
                 return;
             }
         }
         snprintf(out, size, "%s", de);
+        util_cache_write("de", out);
         return;
     }
 
     if (session && session[0] != '\0') {
         snprintf(out, size, "%s", session);
+        util_cache_write("de", out);
         return;
     }
 
@@ -103,14 +112,17 @@ void platform_get_de(char *out, size_t size) {
 void platform_get_wm(char *out, size_t size) {
     if (!out || size == 0) return;
 
+    /* Try cache first -- WM rarely changes between runs */
+    if (util_cache_read("wm", out, size)) return;
+
     const char *wmenv = getenv("WINDOW_MANAGER");
     if (wmenv && wmenv[0] != '\0') {
         const char *name = strrchr(wmenv, '/');
         snprintf(out, size, "%s", name ? name + 1 : wmenv);
+        util_cache_write("wm", out);
         return;
     }
 
-    /* On Wayland we can determine the WM from the compositor / DE */
     const char *wayland_disp = getenv("WAYLAND_DISPLAY");
     const char *session_type = getenv("XDG_SESSION_TYPE");
     int is_wayland = (wayland_disp && wayland_disp[0] != '\0') ||
@@ -122,20 +134,23 @@ void platform_get_wm(char *out, size_t size) {
             const char *de = strchr(xdg_de, ':');
             de = de ? de + 1 : xdg_de;
             if (strstr(de, "GNOME") || strstr(de, "gnome")) {
-                snprintf(out, size, "Mutter (Wayland)"); return;
+                snprintf(out, size, "Mutter (Wayland)");
+                util_cache_write("wm", out);
+                return;
             }
             if (strstr(de, "KDE") || strstr(de, "plasma")) {
-                snprintf(out, size, "KWin (Wayland)"); return;
+                snprintf(out, size, "KWin (Wayland)");
+                util_cache_write("wm", out);
+                return;
             }
             if (strstr(de, "sway") || strstr(de, "Sway")) {
-                snprintf(out, size, "Sway"); return;
+                snprintf(out, size, "Sway");
+                util_cache_write("wm", out);
+                return;
             }
         }
     }
 
-    /* Try common WM detection commands (X11 only -- these tools are
-       meaningless without a running X server, so don't waste a fork+exec
-       pair probing for them under Wayland/headless where DISPLAY is unset). */
     const char *display_env = getenv("DISPLAY");
     if (display_env && display_env[0] != '\0') {
         const char *wm_cmds[] = {
@@ -148,21 +163,18 @@ void platform_get_wm(char *out, size_t size) {
             char buf[128] = "";
             if (util_execute_cmd(wm_cmds[i], buf, sizeof(buf)) == 0 && buf[0] != '\0' && strcmp(buf, "N/A") != 0) {
                 snprintf(out, size, "%s", buf);
+                util_cache_write("wm", out);
                 return;
             }
         }
     }
 
-    /* Fallback: check running processes for known WMs. Previously this spawned
-       a "pgrep -x <name>" subprocess (fork+exec+shell) per candidate -- up to
-       14 sequential subprocesses just to fail on a box with no matching WM.
-       A single pass over /proc does the same job with zero forks. */
+    /* Fallback: check running processes for known WMs via single /proc pass */
     const char *known_wms[] = {
         "mutter", "muffin", "kwin_x11", "kwin_wayland", "openbox",
         "i3", "sway", "bspwm", "xfwm4", "fluxbox", "enlightenment",
         "herbstluftwm", "awesome", "dwm"
     };
-    /* Friendly display names matching the above */
     const char *wm_display[] = {
         "Mutter (GNOME)", "Muffin (Cinnamon)", "KWin (X11)", "KWin (Wayland)", "Openbox",
         "i3", "Sway", "bspwm", "Xfwm4", "Fluxbox", "Enlightenment",
@@ -185,6 +197,7 @@ void platform_get_wm(char *out, size_t size) {
                 if (strcmp(comm, known_wms[i]) == 0) {
                     snprintf(out, size, "%s", wm_display[i]);
                     closedir(proc);
+                    util_cache_write("wm", out);
                     return;
                 }
             }
@@ -200,21 +213,18 @@ void platform_get_wm(char *out, size_t size) {
 void platform_get_terminal(char *out, size_t size) {
     if (!out || size == 0) return;
 
-    /* $TERM_PROGRAM is set by many terminal emulators */
     const char *tp = getenv("TERM_PROGRAM");
     if (tp && tp[0] != '\0') {
         snprintf(out, size, "%s", tp);
         return;
     }
 
-    /* Walk up the process tree from our PID looking for a known terminal */
     const char *known_terms[] = {
         "gnome-terminal", "konsole", "xterm", "urxvt", "alacritty",
         "kitty", "st", "termite", "tilix", "xfce4-terminal", "lxterminal",
         "mate-terminal", "foot", "wezterm", "hyper", NULL
     };
 
-    /* Read /proc/<ppid>/comm walking up */
     int pid = (int)getppid();
     for (int depth = 0; depth < 8 && pid > 1; depth++) {
         char path[64];
@@ -229,7 +239,6 @@ void platform_get_terminal(char *out, size_t size) {
             }
         }
 
-        /* Get parent of pid */
         char status_path[64];
         snprintf(status_path, sizeof(status_path), "/proc/%d/status", pid);
         FILE *f = fopen(status_path, "r");
@@ -247,7 +256,6 @@ void platform_get_terminal(char *out, size_t size) {
         pid = ppid;
     }
 
-    /* Only fall back to $TERM if it is a meaningful value */
     const char *term = getenv("TERM");
     if (term && term[0] != '\0' &&
         strcmp(term, "dumb") != 0 &&
@@ -307,19 +315,24 @@ void platform_get_theme(char *out, size_t size) {
         return;
     }
 
-    /* gsettings fallback */
+    if (util_cache_read("theme", buf, sizeof(buf))) {
+        snprintf(out, size, "%s", buf);
+        return;
+    }
+
     if (util_execute_cmd("gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null", buf, sizeof(buf)) == 0 && buf[0] != '\0') {
         char *s = buf;
         if (*s == '\'' || *s == '"') s++;
         size_t len = strlen(s);
         if (len > 0 && (s[len - 1] == '\'' || s[len - 1] == '"')) s[len - 1] = '\0';
         snprintf(out, size, "%s [GTK]", s);
+        util_cache_write("theme", out);
         return;
     }
 
-    /* KDE / Plasma */
     if (util_execute_cmd("kreadconfig5 --group 'General' --key 'ColorScheme' 2>/dev/null", buf, sizeof(buf)) == 0 && buf[0] != '\0') {
         snprintf(out, size, "%s [KDE]", buf);
+        util_cache_write("theme", out);
         return;
     }
 
@@ -335,12 +348,18 @@ void platform_get_icons(char *out, size_t size) {
         return;
     }
 
+    if (util_cache_read("icons", buf, sizeof(buf))) {
+        snprintf(out, size, "%s", buf);
+        return;
+    }
+
     if (util_execute_cmd("gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null", buf, sizeof(buf)) == 0 && buf[0] != '\0') {
         char *s = buf;
         if (*s == '\'' || *s == '"') s++;
         size_t len = strlen(s);
         if (len > 0 && (s[len - 1] == '\'' || s[len - 1] == '"')) s[len - 1] = '\0';
         snprintf(out, size, "%s", s);
+        util_cache_write("icons", out);
         return;
     }
 
@@ -356,12 +375,18 @@ void platform_get_font(char *out, size_t size) {
         return;
     }
 
+    if (util_cache_read("font", buf, sizeof(buf))) {
+        snprintf(out, size, "%s", buf);
+        return;
+    }
+
     if (util_execute_cmd("gsettings get org.gnome.desktop.interface font-name 2>/dev/null", buf, sizeof(buf)) == 0 && buf[0] != '\0') {
         char *s = buf;
         if (*s == '\'' || *s == '"') s++;
         size_t len = strlen(s);
         if (len > 0 && (s[len - 1] == '\'' || s[len - 1] == '"')) s[len - 1] = '\0';
         snprintf(out, size, "%s", s);
+        util_cache_write("font", out);
         return;
     }
 

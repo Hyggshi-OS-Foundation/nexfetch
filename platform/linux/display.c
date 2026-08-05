@@ -8,6 +8,10 @@
 
 void platform_get_display(char *out, size_t size) {
     if (!out || size == 0) return;
+
+    /* Try cache first -- display resolution rarely changes between runs */
+    if (util_cache_read("display", out, size)) return;
+
     char res[128] = "";
 
     /* Try drm sysfs modes first */
@@ -18,6 +22,7 @@ void platform_get_display(char *out, size_t size) {
                 if (strlen(res) > 0) {
                     snprintf(out, size, "%s", res);
                     globfree(&g);
+                    util_cache_write("display", out);
                     return;
                 }
             }
@@ -27,13 +32,13 @@ void platform_get_display(char *out, size_t size) {
 
     /* Try xrandr if sysfs is empty */
     if (util_execute_cmd("xrandr 2>/dev/null | grep '\\*' | head -n 1 | awk '{print $1, \"@\", $2}'", res, sizeof(res)) == 0 && strlen(res) > 0) {
-        /* strip * or + flags */
         char *p = strchr(res, '*');
         if (p) *p = '\0';
         p = strchr(res, '+');
         if (p) *p = '\0';
         util_trim(res);
         snprintf(out, size, "%s", res);
+        util_cache_write("display", out);
         return;
     }
 
@@ -41,4 +46,3 @@ void platform_get_display(char *out, size_t size) {
 }
 
 #endif
-
