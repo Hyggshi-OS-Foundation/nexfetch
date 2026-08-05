@@ -1,6 +1,6 @@
-name: Test build & run (Arch/Debian/Fedora)
+name: Test build & run (Arch/Debian/Fedora/Windows/macOS)
 
-# Verifies nexfetch actually builds and runs on each distro,
+# Verifies nexfetch actually builds and runs on each target platform,
 # instead of only finding out something's broken at release time.
 on:
   push:
@@ -9,7 +9,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-distro:
+  # ------------------------------------------------------------------
+  # Linux distros — native containers
+  # ------------------------------------------------------------------
+  test-linux-distro:
     name: Test on ${{ matrix.name }}
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
@@ -25,9 +28,7 @@ jobs:
             image: fedora:latest
 
     steps:
-      # ------------------------------------------------------------
       # Install build tools using each distro's own package manager
-      # ------------------------------------------------------------
       - name: Install dependencies (Arch)
         if: matrix.name == 'Arch Linux'
         run: pacman -Syu --noconfirm --needed base-devel git
@@ -45,9 +46,7 @@ jobs:
       - name: Clone repo
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
       # Build from source directly on the real distro
-      # ------------------------------------------------------------
       - name: Build nexfetch
         run: |
           make clean || true
@@ -58,9 +57,7 @@ jobs:
           test -f ./nexfetch
           ls -lh ./nexfetch
 
-      # ------------------------------------------------------------
       # Run it in place first, before installing system-wide
-      # ------------------------------------------------------------
       - name: Run ./nexfetch
         run: ./nexfetch
 
@@ -70,9 +67,7 @@ jobs:
       - name: Run ./nexfetch --list-modules
         run: ./nexfetch --list-modules
 
-      # ------------------------------------------------------------
       # make install, then run via the "nexfetch" command like a real user
-      # ------------------------------------------------------------
       - name: make install
         run: make install PREFIX=/usr
 
@@ -84,3 +79,87 @@ jobs:
 
       - name: make uninstall (cleanup)
         run: make uninstall
+
+  # ------------------------------------------------------------------
+  # Windows — native runner, built via MSYS2/MinGW64 toolchain
+  # ------------------------------------------------------------------
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW64 toolchain)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            mingw-w64-x86_64-toolchain
+
+      - name: Build nexfetch.exe
+        run: |
+          make clean || true
+          make -j"$(nproc)"
+
+      - name: Verify the binary was produced
+        run: |
+          test -f ./nexfetch.exe
+          ls -lh ./nexfetch.exe
+
+      - name: Run ./nexfetch.exe
+        run: ./nexfetch.exe
+
+      - name: Run ./nexfetch.exe --no-logo
+        run: ./nexfetch.exe --no-logo
+
+      - name: Run ./nexfetch.exe --list-modules
+        run: ./nexfetch.exe --list-modules
+
+  # ------------------------------------------------------------------
+  # macOS — native runner (Xcode command line tools already provide
+  # clang + make, matching what the Makefile picks for Darwin)
+  # ------------------------------------------------------------------
+  test-macos:
+    name: Test on macOS
+    runs-on: macos-latest
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Build nexfetch
+        run: |
+          make clean || true
+          make -j"$(sysctl -n hw.ncpu)"
+
+      - name: Verify the binary was produced
+        run: |
+          test -f ./nexfetch
+          ls -lh ./nexfetch
+
+      - name: Run ./nexfetch
+        run: ./nexfetch
+
+      - name: Run ./nexfetch --no-logo
+        run: ./nexfetch --no-logo
+
+      - name: Run ./nexfetch --list-modules
+        run: ./nexfetch --list-modules
+
+      - name: make install
+        run: sudo make install PREFIX=/usr/local
+
+      - name: Run the nexfetch command (after install, from PATH)
+        run: nexfetch
+
+      - name: Check nexfetch --version
+        run: nexfetch --version
+
+      - name: make uninstall (cleanup)
+        run: sudo make uninstall PREFIX=/usr/local
