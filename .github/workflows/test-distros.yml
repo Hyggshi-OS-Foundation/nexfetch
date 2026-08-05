@@ -26,6 +26,20 @@ jobs:
             image: debian:12
           - name: Fedora
             image: fedora:latest
+          - name: Linux Mint
+            image: linuxmintd/mint21.3-amd64
+          - name: Ubuntu
+            image: ubuntu:24.04
+          - name: openSUSE Tumbleweed
+            image: opensuse/tumbleweed:latest
+          - name: Alpine
+            image: alpine:latest
+          - name: Manjaro
+            image: manjarolinux/base:latest
+          - name: Void Linux
+            image: voidlinux/voidlinux:latest
+          - name: Rocky Linux
+            image: rockylinux:9
 
     steps:
       # Install build tools using each distro's own package manager
@@ -41,6 +55,38 @@ jobs:
 
       - name: Install dependencies (Fedora)
         if: matrix.name == 'Fedora'
+        run: dnf install -y gcc make git
+
+      - name: Install dependencies (Linux Mint)
+        if: matrix.name == 'Linux Mint'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.name == 'Ubuntu'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (openSUSE Tumbleweed)
+        if: matrix.name == 'openSUSE Tumbleweed'
+        run: zypper --non-interactive install -y gcc make git
+
+      - name: Install dependencies (Alpine)
+        if: matrix.name == 'Alpine'
+        run: apk add --no-cache build-base git
+
+      - name: Install dependencies (Manjaro)
+        if: matrix.name == 'Manjaro'
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Install dependencies (Void Linux)
+        if: matrix.name == 'Void Linux'
+        run: xbps-install -Syu --yes base-devel git
+
+      - name: Install dependencies (Rocky Linux)
+        if: matrix.name == 'Rocky Linux'
         run: dnf install -y gcc make git
 
       - name: Clone repo
