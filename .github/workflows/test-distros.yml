@@ -1,0 +1,86 @@
+name: Test build & run (Arch/Debian/Fedora)
+
+# Verifies nexfetch actually builds and runs on each distro,
+# instead of only finding out something's broken at release time.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-distro:
+    name: Test on ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Arch Linux
+            image: archlinux:latest
+          - name: Debian
+            image: debian:12
+          - name: Fedora
+            image: fedora:latest
+
+    steps:
+      # ------------------------------------------------------------
+      # Install build tools using each distro's own package manager
+      # ------------------------------------------------------------
+      - name: Install dependencies (Arch)
+        if: matrix.name == 'Arch Linux'
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Install dependencies (Debian)
+        if: matrix.name == 'Debian'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (Fedora)
+        if: matrix.name == 'Fedora'
+        run: dnf install -y gcc make git
+
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------
+      # Build from source directly on the real distro
+      # ------------------------------------------------------------
+      - name: Build nexfetch
+        run: |
+          make clean || true
+          make -j"$(nproc)"
+
+      - name: Verify the binary was produced
+        run: |
+          test -f ./nexfetch
+          ls -lh ./nexfetch
+
+      # ------------------------------------------------------------
+      # Run it in place first, before installing system-wide
+      # ------------------------------------------------------------
+      - name: Run ./nexfetch
+        run: ./nexfetch
+
+      - name: Run ./nexfetch --no-logo (doesn't require chafa)
+        run: ./nexfetch --no-logo
+
+      - name: Run ./nexfetch --list-modules
+        run: ./nexfetch --list-modules
+
+      # ------------------------------------------------------------
+      # make install, then run via the "nexfetch" command like a real user
+      # ------------------------------------------------------------
+      - name: make install
+        run: make install PREFIX=/usr
+
+      - name: Run the nexfetch command (after install, from PATH)
+        run: nexfetch
+
+      - name: Check nexfetch --version
+        run: nexfetch --version
+
+      - name: make uninstall (cleanup)
+        run: make uninstall
