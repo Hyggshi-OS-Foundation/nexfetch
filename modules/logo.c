@@ -7,6 +7,9 @@
 #include <unistd.h>   /* getpid(), access(), usleep() */
 #include <time.h>     /* time() */
 #include <signal.h>   /* sigaction() */
+#else
+#include <process.h>  /* _getpid() */
+#define getpid _getpid
 #endif
 
 extern size_t ansi_visible_length(const char *str);

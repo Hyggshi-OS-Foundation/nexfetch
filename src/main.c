@@ -1,11 +1,3 @@
-#ifndef _WIN32
-/* Needed for pthread_timedjoin_np(), a glibc extension used to bound how
-   long we'll wait on any single module's detection thread (see
-   join_with_timeout() below). Must be defined before any system header
-   is pulled in. */
-#define _GNU_SOURCE
-#endif
-
 #include "nexfetch.h"
 #include "module.h"
 #include "platform.h"
@@ -27,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <pthread.h>
 #include <time.h>
+#include <errno.h>
 #endif
 
 extern void config_init(void);
@@ -64,12 +57,26 @@ typedef struct {
     void (*detect)(char *, size_t);
     char *buf;
     size_t max_len;
+
+    /* Completion signal, used instead of pthread_timedjoin_np() (a glibc
+       extension not available on macOS/BSD pthreads) so the timeout logic
+       below works on every POSIX platform. mutex/cond point at the shared
+       pair set up by the caller for this whole batch of module threads. */
+    pthread_mutex_t *mutex;
+    pthread_cond_t  *cond;
+    volatile int     done;
 } ModuleWorkerTask;
 
 static void *module_worker_runner(void *arg) {
     ModuleWorkerTask *t = (ModuleWorkerTask *)arg;
     if (t && t->detect) {
         t->detect(t->buf, t->max_len);
+    }
+    if (t) {
+        pthread_mutex_lock(t->mutex);
+        t->done = 1;
+        pthread_cond_broadcast(t->cond);
+        pthread_mutex_unlock(t->mutex);
     }
     return NULL;
 }
@@ -106,11 +113,29 @@ static void compute_deadline(struct timespec *ts, int timeout_ms) {
  * timeout_ms total) instead of bounding the whole run. Sharing one
  * deadline means the *combined* time spent waiting across all modules is
  * capped at timeout_ms, however many of them are slow. */
-static int join_with_deadline(pthread_t thread, const struct timespec *deadline) {
-    if (pthread_timedjoin_np(thread, NULL, deadline) != 0) {
+static int join_with_deadline(ModuleWorkerTask *t, pthread_t thread,
+                               const struct timespec *deadline) {
+    int timed_out = 0;
+
+    pthread_mutex_lock(t->mutex);
+    while (!t->done) {
+        int wr = pthread_cond_timedwait(t->cond, t->mutex, deadline);
+        if (wr == ETIMEDOUT) {
+            timed_out = !t->done; /* re-check: may have finished right as we woke */
+            break;
+        }
+        /* Spurious wakeup with the flag still unset: loop again. The
+           deadline is absolute, so this can't run past it. */
+    }
+    pthread_mutex_unlock(t->mutex);
+
+    if (timed_out) {
         pthread_detach(thread);
         return -1;
     }
+    /* Thread has already finished (or is finishing this instant), so this
+       join is effectively non-blocking. */
+    pthread_join(thread, NULL);
     return 0;
 }
 #endif
@@ -389,12 +414,21 @@ int main(int argc, char *argv[]) {
     pthread_t threads[MAX_MODULES];
     ModuleWorkerTask tasks[MAX_MODULES];
 
+    /* Shared by every task in this batch: each worker thread signals its
+       own completion on this pair, and the join loop below waits on it
+       bounded by a single absolute deadline (see join_with_deadline()). */
+    pthread_mutex_t join_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t  join_cond  = PTHREAD_COND_INITIALIZER;
+
     for (int k = 0; k < active_count; k++) {
         int idx = active_indices[k];
         Module *m = module_manager_get(idx);
         tasks[k].detect = m ? m->detect : NULL;
         tasks[k].buf = val_buffers[idx];
         tasks[k].max_len = MAX_VAL_LEN;
+        tasks[k].mutex = &join_mutex;
+        tasks[k].cond = &join_cond;
+        tasks[k].done = 0;
 
         if (tasks[k].detect) {
             pthread_create(&threads[k], NULL, module_worker_runner, &tasks[k]);
@@ -407,7 +441,7 @@ int main(int argc, char *argv[]) {
     for (int k = 0; k < active_count; k++) {
         Module *m = module_manager_get(active_indices[k]);
         if (m && m->detect) {
-            if (join_with_deadline(threads[k], &join_deadline) != 0) {
+            if (join_with_deadline(&tasks[k], threads[k], &join_deadline) != 0) {
                 /* Timed out: discard whatever it may have partially written
                    so it's treated the same as any other empty result. */
                 val_buffers[active_indices[k]][0] = '\0';
