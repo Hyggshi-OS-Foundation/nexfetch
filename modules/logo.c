@@ -279,7 +279,8 @@ static int load_video(const char *path, int logo_width,
  *   1. config.json "logo" path (image or txt)
  *   2. --logo CLI flag  (already stored in g_config.custom_logo_path)
  *   3. logos/<distro_id>.txt
- *   4. logos/tux.txt (fallback)
+ *   4. Fallback: logos/tux.txt for unmatched Linux distros,
+ *      logos/nexfetch.txt for unmatched non-Linux platforms (macOS, Windows)
  */
 int logo_load(const char *distro_id,
               char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
@@ -330,8 +331,20 @@ int logo_load(const char *distro_id,
     }
     if (n > 0) return n;
 
-    /* Fallback: Tux */
-    if (strcmp(distro, "tux") != 0) {
+    /* Fallback:
+     *   - Linux distros with no dedicated art (e.g. an uncommon distro not
+     *     yet in logos/) fall back to Tux, the mascot for the whole family.
+     *   - Non-Linux platforms (macOS, Windows) have no such family mascot
+     *     to borrow -- showing Tux for them is actively misleading (a
+     *     Windows or macOS run should never look like Linux). Fall back to
+     *     nexfetch's own project logo instead. */
+    if (strcmp(distro, "macos") == 0 || strcmp(distro, "windows") == 0) {
+        n = load_txt("logos/nexfetch.txt", logo_lines);
+        if (n <= 0) {
+            n = load_txt("/usr/share/nexfetch/logos/nexfetch.txt", logo_lines);
+        }
+        if (n > 0) return n;
+    } else if (strcmp(distro, "tux") != 0) {
         n = load_txt("logos/tux.txt", logo_lines);
         if (n <= 0) {
             n = load_txt("/usr/share/nexfetch/logos/tux.txt", logo_lines);
