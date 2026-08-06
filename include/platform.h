@@ -14,6 +14,17 @@ void platform_get_wm(char *out, size_t size);
 void platform_get_terminal(char *out, size_t size);
 void platform_get_cpu(char *out, size_t size);
 void platform_get_gpu(char *out, size_t size);
+typedef struct PlatformMeminfo {
+    unsigned long long mem_total_kb;
+    unsigned long long mem_avail_kb;
+    unsigned long long mem_free_kb;
+    unsigned long long buffers_kb;
+    unsigned long long cached_kb;
+    unsigned long long swap_total_kb;
+    unsigned long long swap_free_kb;
+} PlatformMeminfo;
+
+void platform_read_meminfo(PlatformMeminfo *info);
 void platform_get_memory(char *out, size_t size);
 void platform_get_disk(char *out, size_t size);
 void platform_get_theme(char *out, size_t size);

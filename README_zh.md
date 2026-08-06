@@ -12,6 +12,12 @@
   <em>和 Neofetch、Fastfetch 类似,不过logo 会根据终端宽度自动缩放,模块可以通过插件扩展,自带几种显示样式。</em>
 </p>
 
+| Language | README |
+|----------|--------|
+|  English | [English](README.md) |
+|  Tiếng Việt | [Tiếng Việt](README_VI.md) |
+|  简体中文 | [简体中文](README_zh.md) |
+
 <img src="Resources/screenshot1.png" width="48%" align="left" />
 <img src="Resources/screenshot2.png" width="48%" align="left" />
 <img src="Resources/screenshot3.png" width="48%" align="top" />
@@ -19,13 +25,6 @@
 
 > [!WARNING]
 > 这是一个独立项目,和 ghvbb/NexFetch 没有关系。
-
-| Language | README |
-|----------|--------|
-|  English | [English](README.md) |
-|  Tiếng Việt | [Tiếng Việt](README_VI.md) |
-|  简体中文 | [简体中文](README_zh.md) |
-
 
 ---
 
@@ -584,6 +583,34 @@ make clean    # 清理构建产物
 ### CI/CD
 
 每次推送 `v*` 标签都会触发 `.github/workflows/release.yml`,构建 `amd64`/`arm64`/`armhf`,打包出 `.deb`、`.rpm`、`x86_64` 的 Arch 包,以及 `amd64`/`arm64` 的 AppImage,然后统一发布到 GitHub Releases。
+
+## Benchmark
+
+在同一台机器上测的,每个工具都跑了多次并计时。数值越小越快。
+
+### 默认配置
+
+| 工具 | 平均值 | 中位数 | 标准差 | 最小值 | 最大值 |
+| --- | --- | --- | --- | --- | --- |
+| `./nexfetch` | 6.38ms | 6.29ms | 0.44ms | 5.76ms | 8.03ms |
+| `./nexfetch-ghvbb` | 9.06ms | 8.91ms | 0.72ms | 8.33ms | 14.03ms |
+| `fastfetch` | 34.28ms | 33.95ms | 1.34ms | 32.67ms | 39.37ms |
+| `./neofetch` | 452.58ms | 446.10ms | 19.21ms | 431.15ms | 577.88ms |
+
+<img src="Resources/benchmark_bar_normal.png"/>
+
+### `--fast` 配置
+
+| 工具 | 平均值 | 中位数 | 标准差 | 最小值 | 最大值 |
+| --- | --- | --- | --- | --- | --- |
+| `./nexfetch --fast` | 2.15ms | 2.08ms | 0.28ms | 1.81ms | 3.79ms |
+| `./nexfetch-ghvbb` | 8.95ms | 8.93ms | 0.26ms | 8.45ms | 10.28ms |
+| `fastfetch` | 34.97ms | 34.15ms | 3.26ms | 32.65ms | 61.37ms |
+| `./neofetch --fast` | 445.92ms | 442.80ms | 10.68ms | 430.28ms | 487.43ms |
+
+<img src="Resources/benchmark_bar.png"/>
+
+两种配置下,nexfetch 比 fastfetch 快大约 5 倍,比 neofetch 快 70 到 200 倍左右。这里的 `nexfetch-ghvbb` 指的是 [ghvbb/NexFetch](https://github.com/ghvbb/NexFetch),一个名字相似但没有关系的项目,放进来只是方便对照,因为不少人会把两者搞混。
 
 ## 许可证
 

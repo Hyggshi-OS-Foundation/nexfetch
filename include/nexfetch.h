@@ -37,6 +37,9 @@ typedef struct NexfetchConfig {
      * Loaded at startup via module_manager_load_plugin(). */
     char plugin_paths[MAX_PLUGINS][512];
     int  plugin_count;
+
+    /* Set by --fast: skip slow modules/plugins and defer expensive work. */
+    int  fast_mode;
 } NexfetchConfig;
 
 extern NexfetchConfig g_config;

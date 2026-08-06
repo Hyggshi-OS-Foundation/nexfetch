@@ -12,6 +12,12 @@
   <em>Like Neofetch and Fastfetch, but the logo scales itself to the terminal, modules can be added through plugins, and a few display styles come built in.</em>
 </p>
 
+| Language | README |
+|----------|--------|
+|  English | [English](README.md) |
+|  Tiếng Việt | [Tiếng Việt](README_VI.md) |
+|  简体中文 | [简体中文](README_zh.md) |
+
 <img src="Resources/screenshot1.png" width="48%" align="left" />
 <img src="Resources/screenshot2.png" width="48%" align="left" />
 <img src="Resources/screenshot3.png" width="48%" align="top" />
@@ -19,12 +25,6 @@
 
 > [!WARNING]
 > This is an independent project. It has no connection to ghvbb/NexFetch.
-
-| Language | README |
-|----------|--------|
-|  English | [English](README.md) |
-|  Tiếng Việt | [Tiếng Việt](README_VI.md) |
-|  简体中文 | [简体中文](README_zh.md) |
 
 ---
 
@@ -583,6 +583,34 @@ make clean    # Remove build artifacts
 ### CI/CD
 
 Every push of a `v*` tag triggers `.github/workflows/release.yml`, which builds `amd64`/`arm64`/`armhf`, packages `.deb`, `.rpm`, an `x86_64` Arch package, and `amd64`/`arm64` AppImages, then publishes all of them to GitHub Releases.
+
+## Benchmark
+
+Measured on the same machine, each tool run repeatedly and timed. Lower is better.
+
+### Default configuration
+
+| Tool | Mean | Median | Stdev | Min | Max |
+| --- | --- | --- | --- | --- | --- |
+| `./nexfetch` | 6.38ms | 6.29ms | 0.44ms | 5.76ms | 8.03ms |
+| `./nexfetch-ghvbb` | 9.06ms | 8.91ms | 0.72ms | 8.33ms | 14.03ms |
+| `fastfetch` | 34.28ms | 33.95ms | 1.34ms | 32.67ms | 39.37ms |
+| `./neofetch` | 452.58ms | 446.10ms | 19.21ms | 431.15ms | 577.88ms |
+
+<img src="Resources/benchmark_bar_normal.png"/>
+
+### `--fast` configuration
+
+| Tool | Mean | Median | Stdev | Min | Max |
+| --- | --- | --- | --- | --- | --- |
+| `./nexfetch --fast` | 2.15ms | 2.08ms | 0.28ms | 1.81ms | 3.79ms |
+| `./nexfetch-ghvbb` | 8.95ms | 8.93ms | 0.26ms | 8.45ms | 10.28ms |
+| `fastfetch` | 34.97ms | 34.15ms | 3.26ms | 32.65ms | 61.37ms |
+| `./neofetch --fast` | 445.92ms | 442.80ms | 10.68ms | 430.28ms | 487.43ms |
+
+<img src="Resources/benchmark_bar.png"/>
+
+nexfetch comes out around 5x faster than fastfetch and roughly 70-200x faster than neofetch in both configurations. `nexfetch-ghvbb` here refers to [ghvbb/NexFetch](https://github.com/ghvbb/NexFetch), an unrelated project with a similar name, included for reference since people sometimes confuse the two.
 
 ## License
 

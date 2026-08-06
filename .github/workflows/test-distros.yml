@@ -55,31 +55,31 @@ jobs:
 
     steps:
       # Install build tools using each distro's own package manager
-      - name: Install dependencies (Arch)
-        if: matrix.name == 'Arch Linux'
+      - name: Install dependencies (Arch-based)
+        if: >
+          matrix.name == 'Arch Linux' ||
+          matrix.name == 'Manjaro'    ||
+          matrix.name == 'CachyOS'
         run: pacman -Syu --noconfirm --needed base-devel git
 
-      - name: Install dependencies (Debian)
-        if: matrix.name == 'Debian'
+      - name: Install dependencies (apt-based)
+        if: >
+          matrix.name == 'Debian'     ||
+          matrix.name == 'Linux Mint' ||
+          matrix.name == 'Ubuntu'     ||
+          matrix.name == 'Xubuntu'   ||
+          matrix.name == 'Kubuntu'   ||
+          matrix.name == 'Lubuntu'   ||
+          matrix.name == 'CaramOS'
         run: |
           apt-get update
           apt-get install -y build-essential git
 
-      - name: Install dependencies (Fedora)
-        if: matrix.name == 'Fedora'
+      - name: Install dependencies (Fedora / Rocky Linux)
+        if: >
+          matrix.name == 'Fedora' ||
+          matrix.name == 'Rocky Linux'
         run: dnf install -y gcc make git
-
-      - name: Install dependencies (Linux Mint)
-        if: matrix.name == 'Linux Mint'
-        run: |
-          apt-get update
-          apt-get install -y build-essential git
-
-      - name: Install dependencies (Ubuntu)
-        if: matrix.name == 'Ubuntu'
-        run: |
-          apt-get update
-          apt-get install -y build-essential git
 
       - name: Install dependencies (openSUSE Tumbleweed)
         if: matrix.name == 'openSUSE Tumbleweed'
@@ -88,10 +88,6 @@ jobs:
       - name: Install dependencies (Alpine)
         if: matrix.name == 'Alpine'
         run: apk add --no-cache build-base git
-
-      - name: Install dependencies (Manjaro)
-        if: matrix.name == 'Manjaro'
-        run: pacman -Syu --noconfirm --needed base-devel git
 
       - name: Install dependencies (Void Linux)
         if: matrix.name == 'Void Linux'
@@ -102,46 +98,11 @@ jobs:
           xbps-install -Syu --yes -R https://repo-fastly.voidlinux.org/current xbps
           xbps-install -Syu --yes -R https://repo-fastly.voidlinux.org/current base-devel git
 
-      - name: Install dependencies (Xubuntu)
-        if: matrix.name == 'Xubuntu'
-        run: |
-          apt-get update
-          apt-get install -y build-essential git
-
-      - name: Install dependencies (Kubuntu)
-        if: matrix.name == 'Kubuntu'
-        run: |
-          apt-get update
-          apt-get install -y build-essential git
-
-      - name: Install dependencies (Lubuntu)
-        if: matrix.name == 'Lubuntu'
-        run: |
-          apt-get update
-          apt-get install -y build-essential git
-
-      - name: Install dependencies (CachyOS)
-        if: matrix.name == 'CachyOS'
-        run: pacman -Syu --noconfirm --needed base-devel git
-
-      - name: Install dependencies (CaramOS)
-        if: matrix.name == 'CaramOS'
-        run: |
-          # CaramOS is an ISO-remaster distro (Linux Mint 22.3 Cinnamon /
-          # Ubuntu 24.04 LTS base) with no standalone container image, so
-          # it's tested here on its Ubuntu 24.04 base toolchain.
-          apt-get update
-          apt-get install -y build-essential git
-
       - name: Install dependencies (Gentoo)
         if: matrix.name == 'Gentoo'
         run: |
           emerge-webrsync
           emerge --getbinpkg sys-devel/gcc dev-build/make dev-vcs/git
-
-      - name: Install dependencies (Rocky Linux)
-        if: matrix.name == 'Rocky Linux'
-        run: dnf install -y gcc make git
 
       - name: Clone repo
         uses: actions/checkout@v4

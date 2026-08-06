@@ -100,6 +100,8 @@ static int count_snap_packages(void) {
 
 void platform_get_packages(char *out, size_t size) {
     if (!out || size == 0) return;
+    if (util_cache_read("packages", out, size)) return;
+
     int total_pkgs = 0;
     char details[256] = "";
 
@@ -153,6 +155,8 @@ void platform_get_packages(char *out, size_t size) {
     } else {
         snprintf(out, size, "Unknown");
     }
+
+    if (strcmp(out, "Unknown") != 0) util_cache_write("packages", out);
 }
 
 #endif

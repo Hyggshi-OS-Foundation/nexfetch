@@ -81,6 +81,35 @@ static void *module_worker_runner(void *arg) {
     return NULL;
 }
 
+typedef struct {
+    const char *distro_id;
+    char (*lines)[MAX_LOGO_LINE_LEN];
+    int count;
+    size_t max_width;
+} LogoLoadTask;
+
+static void *logo_load_runner(void *arg) {
+    LogoLoadTask *t = (LogoLoadTask *)arg;
+    if (!t || !t->lines) return NULL;
+    t->count = logo_load(t->distro_id, t->lines);
+    t->max_width = 0;
+    for (int i = 0; i < t->count; i++) {
+        size_t w = ansi_visible_length(t->lines[i]);
+        if (w > t->max_width) t->max_width = w;
+    }
+    return NULL;
+}
+
+static int module_is_slow(const char *key) {
+    return key && (
+        strcmp(key, "packages") == 0 ||
+        strcmp(key, "theme")    == 0 ||
+        strcmp(key, "icons")    == 0 ||
+        strcmp(key, "font")     == 0 ||
+        strcmp(key, "display")  == 0
+    );
+}
+
 /* Bound total run time so one misbehaving module -- a plugin waiting on a
  * daemon socket, a subprocess fallback stuck on a slow D-Bus/dconf
  * round-trip, an unreachable network share, etc. -- can never stall the
@@ -292,7 +321,8 @@ int main(int argc, char *argv[]) {
             if (fps > 0) g_config.logo_fps = fps;
         }
         if (strcmp(argv[i], "--fast") == 0) {
-            g_config.logo_animate = 0;  /* skip animation */
+            g_config.fast_mode = 1;
+            g_config.logo_animate = 0;
         }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("nexfetch - Modern Modular System Fetch CLI\n");
@@ -342,12 +372,14 @@ int main(int argc, char *argv[]) {
     module_manager_register("Locale",   "locale",   module_detect_locale);
 
     /* Load dynamic plugins listed in config.json "plugins" array */
-    for (int i = 0; i < g_config.plugin_count; i++) {
-        module_manager_load_plugin(g_config.plugin_paths[i]);
-    }
+    if (!g_config.fast_mode) {
+        for (int i = 0; i < g_config.plugin_count; i++) {
+            module_manager_load_plugin(g_config.plugin_paths[i]);
+        }
 
-    /* Auto-load plugins from user and system module directories */
-    module_manager_load_from_dirs();
+        /* Auto-load plugins from user and system module directories */
+        module_manager_load_from_dirs();
+    }
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--list-modules") == 0) {
@@ -366,27 +398,35 @@ int main(int argc, char *argv[]) {
     char os_val[MAX_VAL_LEN] = "";
     module_detect_os(os_val, sizeof(os_val));
 
-    /* Load logo */
+    /* Load logo concurrently with module detection (POSIX only). */
     char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN];
     memset(logo_lines, 0, sizeof(logo_lines));
     int logo_count = 0;
     size_t max_logo_width = 0;
 
+#ifndef _WIN32
+    LogoLoadTask logo_task = {
+        .distro_id = g_config.distro_id,
+        .lines = logo_lines,
+        .count = 0,
+        .max_width = 0
+    };
+    pthread_t logo_thread;
+    int logo_thread_active = 0;
+    if (g_config.show_logo) {
+        if (pthread_create(&logo_thread, NULL, logo_load_runner, &logo_task) == 0) {
+            logo_thread_active = 1;
+        }
+    }
+#else
     if (g_config.show_logo) {
         logo_count = logo_load(g_config.distro_id, logo_lines);
         for (int i = 0; i < logo_count; i++) {
             size_t w = ansi_visible_length(logo_lines[i]);
             if (w > max_logo_width) max_logo_width = w;
         }
-
-        /* Auto-fallback if logo + info is wider than terminal */
-        int term_width = get_terminal_width();
-        if ((int)(max_logo_width + LOGO_PADDING + 40) > term_width) {
-            g_config.show_logo = 0;
-            logo_count = 0;
-            max_logo_width = 0;
-        }
     }
+#endif
 
     /* Collect raw system information results (independent of UI presentation) */
     ModuleResult results[MAX_MODULES];
@@ -416,12 +456,16 @@ int main(int argc, char *argv[]) {
             if (!allowed) continue;
         }
 
+        if (g_config.fast_mode && module_is_slow(m->key)) continue;
+
         active_indices[active_count++] = i;
     }
 
 #ifndef _WIN32
     pthread_t threads[MAX_MODULES];
     ModuleWorkerTask tasks[MAX_MODULES];
+    int thread_started[MAX_MODULES];
+    memset(thread_started, 0, sizeof(thread_started));
 
     /* Shared by every task in this batch: each worker thread signals its
        own completion on this pair, and the join loop below waits on it
@@ -439,8 +483,14 @@ int main(int argc, char *argv[]) {
         tasks[k].cond = &join_cond;
         tasks[k].done = 0;
 
-        if (tasks[k].detect) {
-            pthread_create(&threads[k], NULL, module_worker_runner, &tasks[k]);
+        if (m && strcmp(m->key, "os") == 0) {
+            snprintf(val_buffers[idx], MAX_VAL_LEN, "%s", os_val);
+            continue;
+        }
+
+        if (tasks[k].detect &&
+            pthread_create(&threads[k], NULL, module_worker_runner, &tasks[k]) == 0) {
+            thread_started[k] = 1;
         }
     }
 
@@ -448,6 +498,7 @@ int main(int argc, char *argv[]) {
     compute_deadline(&join_deadline, NEXFETCH_MODULE_TIMEOUT_MS);
 
     for (int k = 0; k < active_count; k++) {
+        if (!thread_started[k]) continue;
         Module *m = module_manager_get(active_indices[k]);
         if (m && m->detect) {
             if (join_with_deadline(&tasks[k], threads[k], &join_deadline) != 0) {
@@ -457,15 +508,34 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
+    if (logo_thread_active) {
+        pthread_join(logo_thread, NULL);
+        logo_count = logo_task.count;
+        max_logo_width = logo_task.max_width;
+    }
 #else
     for (int k = 0; k < active_count; k++) {
         int idx = active_indices[k];
         Module *m = module_manager_get(idx);
+        if (m && strcmp(m->key, "os") == 0) {
+            snprintf(val_buffers[idx], MAX_VAL_LEN, "%s", os_val);
+            continue;
+        }
         if (m && m->detect) {
             m->detect(val_buffers[idx], MAX_VAL_LEN);
         }
     }
 #endif
+
+    if (g_config.show_logo) {
+        int term_width = get_terminal_width();
+        if ((int)(max_logo_width + LOGO_PADDING + 40) > term_width) {
+            g_config.show_logo = 0;
+            logo_count = 0;
+            max_logo_width = 0;
+        }
+    }
 
     for (int k = 0; k < active_count; k++) {
         int idx = active_indices[k];
@@ -495,9 +565,25 @@ int main(int argc, char *argv[]) {
        frame (or a prior run) can peek out from behind the new one. */
     clear_full_screen();
 
+    /* Hide cursor and clear scrollback to eliminate shell prompt artifacts
+     * when rendering background images. The prompt line would otherwise
+     * remain visible at the bottom, mixed into the chafa output. */
+#ifdef _WIN32
+    if (_isatty(_fileno(stdout)))
+#else
+    if (isatty(STDOUT_FILENO))
+#endif
+    {
+        fputs("\033[?25l", stdout);  /* hide cursor */
+        /* Note: we intentionally do NOT use \033[3J (clear scrollback) here
+         * as it would wipe terminal history. The clear_full_screen() above
+         * already cleared the visible viewport which is sufficient. */
+        fflush(stdout);
+    }
+
     /* Delegate presentation rendering to the active Presenter Plugin/Theme */
     /* Render background image first if configured (renders behind fetch output) */
-    if (g_config.background_image_path[0] != '\0') {
+    if (g_config.background_image_path[0] != '\0' && !g_config.fast_mode) {
         /*
          * render_background() needs to know how many rows the frame we're
          * about to draw actually needs, so it can capture at least that

@@ -193,25 +193,29 @@ int util_get_user_config_dir(char *out, size_t size) {
  * few seconds instead of re-querying D-Bus on every single invocation. */
 #define NEXFETCH_CACHE_TTL_SECS 30
 
-static int util_cache_path(const char *key, char *out, size_t size) {
+static int util_cache_dir(char *dir, size_t dir_size) {
     const char *xdg = getenv("XDG_CACHE_HOME");
     const char *home = getenv("HOME");
-    char dir[400];
     if (xdg && xdg[0] != '\0')
-        snprintf(dir, sizeof(dir), "%s/nexfetch", xdg);
+        snprintf(dir, dir_size, "%s/nexfetch", xdg);
     else if (home && home[0] != '\0')
-        snprintf(dir, sizeof(dir), "%s/.cache/nexfetch", home);
+        snprintf(dir, dir_size, "%s/.cache/nexfetch", home);
     else
         return 0;
+    return 1;
+}
 
-    util_mkdir_p(dir);
+static int util_cache_path(const char *key, char *out, size_t size, int create_dir) {
+    char dir[400];
+    if (!util_cache_dir(dir, sizeof(dir))) return 0;
+    if (create_dir) util_mkdir_p(dir);
     snprintf(out, size, "%s/%s.cache", dir, key);
     return 1;
 }
 
 int util_cache_read(const char *key, char *out, size_t size) {
     char path[512];
-    if (!util_cache_path(key, path, sizeof(path))) return 0;
+    if (!util_cache_path(key, path, sizeof(path), 0 /* read: no mkdir */)) return 0;
 
     struct stat st;
     if (stat(path, &st) != 0) return 0;
@@ -227,7 +231,7 @@ int util_cache_read(const char *key, char *out, size_t size) {
 
 void util_cache_write(const char *key, const char *value) {
     char path[512];
-    if (!util_cache_path(key, path, sizeof(path))) return;
+    if (!util_cache_path(key, path, sizeof(path), 1 /* write: ensure dir */)) return;
     FILE *f = fopen(path, "w");
     if (!f) return;
     fputs(value, f);

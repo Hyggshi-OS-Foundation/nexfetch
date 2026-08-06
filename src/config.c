@@ -20,7 +20,8 @@ NexfetchConfig g_config = {
     .color_blocks           = 1,
     .theme                  = "boxed",
     .background_image_path  = "",
-    .enabled_module_count   = 0
+    .enabled_module_count   = 0,
+    .fast_mode              = 0
 };
 
 static int json_get_string(const char *json, const char *key, char *out, size_t out_size) {
