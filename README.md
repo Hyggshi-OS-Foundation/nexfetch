@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>A modern, modular system information tool for Linux, macOS, and Windows.</strong>
+  <strong>A system information tool for Linux, macOS, and Windows.</strong>
 </p>
 
 <p align="center">
-  <em>Similar to Neofetch and Fastfetch — but with auto-scaling logos, pluggable modules, and multiple presentation themes built in.</em>
+  <em>Like Neofetch and Fastfetch, but the logo scales itself to the terminal, modules can be added through plugins, and a few display styles come built in.</em>
 </p>
 
 <img src="Resources/screenshot1.png" width="48%" align="left" />
@@ -18,96 +18,100 @@
 <img src="Resources/screenshot4.png" width="48%" align="top" />
 
 > [!WARNING]
-> Independent project, not affiliated with ghvbb/NexFetch
+> This is an independent project. It has no connection to ghvbb/NexFetch.
+
+| Language | README |
+|----------|--------|
+|  English | [English](README.md) |
+|  Tiếng Việt | [Tiếng Việt](README_VI.md) |
+|  简体中文 | [简体中文](README_zh.md) |
 
 ---
 
-## ✨ Features
+## Features
 
-- **Cross-platform** — Runs on Linux, macOS, and Windows (native + MinGW/MSYS/Cygwin)
-- **Modular architecture** — 21 built-in modules, easily extended with dynamic plugins
-- **Multiple themes** — `boxed` (default), `classic`, and `modern` presentation styles
-- **Smart logo handling** — ASCII `.txt` logos and image logos (PNG/JPG/GIF) via [`chafa`](https://github.com/hpjansson/chafa)
-- **Auto-scaling** — Automatically disables the logo when the terminal is too narrow
-- **Configurable** — JSON config file + CLI flags for full control
-- **Plugin system** — Load custom `.so`/`.dll` modules at runtime
-- **Lightweight** — Written in pure C with minimal dependencies
+- Runs on Linux, macOS, and Windows (native, plus MinGW/MSYS/Cygwin)
+- 21 built-in modules, extendable with dynamic plugins
+- Three display styles: `boxed` (default), `classic`, `modern`
+- Logos as ASCII `.txt` files or images (PNG/JPG/GIF), converted to ANSI through [`chafa`](https://github.com/hpjansson/chafa)
+- The logo turns off on its own when the terminal is too narrow to fit it
+- Configured through a JSON file or command-line flags
+- Loads `.so`/`.dll` modules at runtime
+- Written in C, few dependencies
 
-## 📦 Installation
+## Installation
 
-Every tagged release publishes prebuilt packages to the [Releases page](https://github.com/Hyggshi-OS-Foundation/nexfetch/releases) for `amd64`, `arm64`, and `armhf`. Pick the method for your distro family below. If your distro isn't listed, use **Build from source**.
+Every `v*` tag release publishes builds for `amd64`, `arm64`, and `armhf` on the [Releases page](https://github.com/Hyggshi-OS-Foundation/nexfetch/releases). Pick the method that matches your distro below; if it isn't listed, build from source.
 
 | Distro family | Examples | Package | Arch coverage |
 | --- | --- | --- | --- |
-| Debian-base | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` | amd64, arm64, armhf |
-| RPM-base | Fedora, openSUSE, RHEL, CentOS | `.rpm` | amd64, arm64, armhf |
-| Arch-base | Arch Linux, Manjaro, EndeavourOS | `.pkg.tar.zst` | x86_64 only |
-| Any distro | — | `.AppImage` | amd64, arm64 |
-| **Gentoo, Void, Slackware, and any other base** | — | — | **Build from source** (compiler required) |
+| Debian | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` | amd64, arm64, armhf |
+| RPM | Fedora, openSUSE, RHEL, CentOS | `.rpm` | amd64, arm64, armhf |
+| Arch | Arch Linux, Manjaro, EndeavourOS | `.pkg.tar.zst` | x86_64 only |
+| Any | — | `.AppImage` | amd64, arm64 |
+| Gentoo, Void, Slackware, and others | — | — | build from source (compiler required) |
 
-### Debian-base (.deb)
+### Debian (.deb)
 
-Download the `.deb` matching your architecture from Releases, then:
+Download the `.deb` for your architecture from Releases, then:
 
 ```bash
 sudo dpkg -i nexfetch_<version>_<arch>.deb
-sudo apt -f install   # resolve dependencies if needed
+sudo apt -f install   # fix dependencies if needed
 ```
 
-To uninstall:
+To remove:
 
 ```bash
 sudo apt remove nexfetch
 ```
 
-### RPM-base (.rpm)
+### RPM (.rpm)
 
 ```bash
 sudo rpm -i nexfetch-<version>.<arch>.rpm
-# or, on dnf/zypper systems:
+# or on dnf/zypper systems:
 sudo dnf install ./nexfetch-<version>.<arch>.rpm
 ```
 
-To uninstall:
+To remove:
 
 ```bash
 sudo rpm -e nexfetch
 ```
 
-### Arch-base (.pkg.tar.zst)
+### Arch (.pkg.tar.zst)
 
-Only `x86_64` builds are published (the upstream `archlinux` build container doesn't ship an `aarch64` image). Download the package from Releases, then:
+Only `x86_64` builds are published, since the upstream `archlinux` build container has no `aarch64` image. Download the package from Releases, then:
 
 ```bash
 sudo pacman -U nexfetch-<version>-1-x86_64.pkg.tar.zst
 ```
 
-To uninstall:
+To remove:
 
 ```bash
 sudo pacman -R nexfetch
 ```
 
-### AppImage (any distro, no install needed)
-
-Works on virtually any modern Linux distro without root or a package manager:
+### AppImage (any distro, no install)
 
 ```bash
 chmod +x nexfetch-<version>-x86_64.AppImage
 ./nexfetch-<version>-x86_64.AppImage
 ```
 
-*(use the `aarch64` AppImage on ARM64 systems)*
+*(use the `aarch64` build on ARM64 machines)*
 
 ### Build from source
 
-Required for **Gentoo, Void, Slackware, and any distro without a prebuilt package above** — and works everywhere else too if you'd rather not use a package manager.
+Required for Gentoo, Void, Slackware, or any distro without a prebuilt package above, and works on the others too if you'd rather skip the package manager.
 
-#### Prerequisites
+#### You'll need
 
 - A C compiler (`gcc` or `clang`)
 - `make`
-- *(Optional)* [`chafa`](https://github.com/hpjansson/chafa) — for image-to-ANSI logo conversion
+- `chafa` (optional, only needed for image logos)
 
 #### Build
 
@@ -117,20 +121,20 @@ cd nexfetch
 make
 ```
 
-This produces a `nexfetch` executable (or `nexfetch.exe` on Windows) in the project root.
+This puts a `nexfetch` executable (`nexfetch.exe` on Windows) in the project root.
 
-#### System-wide install
+#### Install system-wide
 
 ```bash
 sudo make install
 ```
 
-This installs:
-- `nexfetch` binary → `/usr/bin/nexfetch`
-- Logos → `/usr/share/nexfetch/logos/`
-- Default config → `/etc/nexfetch/config.json`
+This copies:
+- The `nexfetch` binary to `/usr/bin/nexfetch`
+- Logos to `/usr/share/nexfetch/logos/`
+- A default config to `/etc/nexfetch/config.json`
 
-To uninstall:
+To remove:
 
 ```bash
 sudo make uninstall
@@ -150,45 +154,45 @@ make run
 make clean
 ```
 
-## 🚀 Usage
+## Usage
 
 ```bash
 nexfetch [options]
 ```
 
-### Options
+### Flags
 
 | Flag | Description |
 | --- | --- |
 | `-h`, `--help` | Show help and available options |
 | `-v`, `--version` | Print version information |
-| `--no-logo` | Disable the ASCII logo display |
+| `--no-logo` | Turn off the ASCII logo |
 | `--logo <path>` | Use a custom logo file (`.txt` or image) |
-| `--theme <name>` | Set presentation theme: `boxed`, `classic`, or `modern` |
+| `--theme <name>` | Set display style: `boxed`, `classic`, or `modern` |
 | `--list-modules` | List all registered modules |
 
 ### Examples
 
 ```bash
-# Default run with auto-detected distro logo
+# Default run, logo picked automatically for your distro
 ./nexfetch
 
-# Use the classic neofetch-style layout
+# Old neofetch-style layout
 ./nexfetch --theme classic
 
-# Use a custom image logo
+# Custom image logo
 ./nexfetch --logo logos/Tux.png
 
-# Run without the logo (info only)
+# No logo, info only
 ./nexfetch --no-logo
 
-# List all available modules
+# See every available module
 ./nexfetch --list-modules
 ```
 
-## ⚙️ Configuration
+## Configuration
 
-nexfetch reads `config/config.json` at startup. Below is the default configuration:
+nexfetch reads `config/config.json` on startup. Here's the default:
 
 ```json
 {
@@ -212,20 +216,20 @@ nexfetch reads `config/config.json` at startup. Below is the default configurati
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `show_logo` | boolean | Show/hide the ASCII logo |
-| `color_blocks` | boolean | Show/hide the color palette bar |
-| `theme` | string | Presentation theme: `boxed`, `classic`, or `modern` |
+| `show_logo` | boolean | Show or hide the ASCII logo |
+| `color_blocks` | boolean | Show or hide the color bar |
+| `theme` | string | Display style: `boxed`, `classic`, `modern` |
 | `logo` | string | Path to a custom logo file (`.txt` or image) |
-| `logo_width` | integer | Width in columns for image logos (used with `chafa`) |
-| `background_image` | string | Path to an image rendered as full-terminal background (requires `chafa`) |
-| `plugins` | array | Paths to dynamic plugin shared libraries (`.so`/`.dll`) to load |
-| `modules` | array | Ordered list of module keys to display |
+| `logo_width` | integer | Column width for image logos (used with `chafa`) |
+| `background_image` | string | Path to an image rendered as a full-terminal background (needs `chafa`) |
+| `plugins` | array | Paths to plugin libraries (`.so`/`.dll`) to load |
+| `modules` | array | Order in which modules are displayed |
 
-> **Note:** CLI flags override values set in `config.json`.
+> Command-line flags override anything set in `config.json`.
 
-## 🧩 Modules
+## Modules
 
-nexfetch ships with 21 built-in modules:
+nexfetch ships with 21 modules:
 
 | Module | Key | Description |
 | --- | --- | --- |
@@ -234,16 +238,16 @@ nexfetch ships with 21 built-in modules:
 | Host | `host` | Device/host model |
 | Uptime | `uptime` | System uptime |
 | Packages | `packages` | Installed package count |
-| Display | `display` | Screen resolution(s) |
+| Display | `display` | Screen resolution |
 | Shell | `shell` | Current shell |
 | DE | `de` | Desktop environment |
 | WM | `wm` | Window manager |
 | Terminal | `terminal` | Terminal emulator |
-| CPU | `cpu` | CPU model and cores |
+| CPU | `cpu` | CPU model and core count |
 | GPU | `gpu` | GPU model |
-| Memory | `memory` | RAM usage |
-| Disk | `disk` | Disk usage |
-| Swap | `swap` | Swap usage |
+| Memory | `memory` | RAM in use |
+| Disk | `disk` | Disk space in use |
+| Swap | `swap` | Swap in use |
 | Battery | `battery` | Battery status |
 | Network | `network` | Network interface info |
 | Theme | `theme` | Current theme |
@@ -251,7 +255,7 @@ nexfetch ships with 21 built-in modules:
 | Font | `font` | Current font |
 | Locale | `locale` | System locale |
 
-### Writing a Plugin
+### Writing a plugin
 
 Plugins are shared libraries (`.so` on Linux/macOS, `.dll` on Windows) that export three symbols:
 
@@ -268,7 +272,7 @@ void plugin_detect(char *out, size_t max_len) {
 }
 ```
 
-Compile and load:
+Compile and load it:
 
 ```bash
 # Linux/macOS
@@ -278,11 +282,11 @@ gcc -shared -fPIC -o plugins/myplugin.so my_plugin.c
 gcc -shared -o plugins/myplugin.dll my_plugin.c
 ```
 
-The plugin is loaded at runtime via `module_manager_load_plugin()`, which resolves `plugin_name`, `plugin_key`, and `plugin_detect`.
+The plugin is loaded at runtime by `module_manager_load_plugin()`, which resolves `plugin_name`, `plugin_key`, and `plugin_detect`.
 
-### Vision Plugin (Camera/Webcam)
+### Vision Plugin (camera/webcam)
 
-nexfetch ships with a **Vision Plugin** that detects and displays camera/webcam information on your system:
+nexfetch includes a Vision Plugin that finds and displays camera/webcam information:
 
 ```c
 // plugins/vision.c
@@ -302,7 +306,7 @@ static void trim(char *s)
         s[--len] = '\0';
 }
 
-/* Count the number of video devices in /sys/class/video4linux/ */
+/* Count video devices in /sys/class/video4linux/ */
 static int count_video_devices(void)
 {
     DIR *dir = opendir("/sys/class/video4linux");
@@ -374,7 +378,7 @@ Compile the Vision Plugin:
 # Linux/macOS
 gcc -shared -fPIC -o plugins/vision.so plugins/vision.c
 
-# Windows (requires V4L2 emulation layer)
+# Windows (needs a V4L2 emulation layer)
 gcc -shared -o plugins/vision.dll plugins/vision.c
 ```
 
@@ -391,9 +395,9 @@ Then register it in `config/config.json`:
 
 | Step | Description |
 | --- | --- |
-| Scan | `count_video_devices()` scans `/sys/class/video4linux/` counting `video*` nodes |
+| Scan | `count_video_devices()` scans `/sys/class/video4linux/` and counts `video*` nodes |
 | Name | `get_first_camera_name()` reads the device name from `videoX/name` |
-| Output | `Camera Name (N cameras)` — or `No camera detected` if none found |
+| Output | Prints `Camera name (N cameras)`, or `No camera detected` if nothing is found |
 
 **Example output:**
 
@@ -401,11 +405,11 @@ Then register it in `config/config.json`:
 Vision Camera: Integrated_Webcam_HD: Integrate (+1 more cameras)
 ```
 
-> **Note:** On Linux, a single physical webcam often exposes multiple `/dev/videoN` nodes (e.g. `video0` for capture, `video1` for metadata). The Vision Plugin counts them all.
+> On Linux, one physical webcam often exposes several `/dev/videoN` nodes at once (say, `video0` for capture and `video1` for metadata). The Vision Plugin counts all of them.
 
-### Vision for Nexfetch Plugin (Version)
+### Vision for Nexfetch Plugin (version)
 
-A lightweight plugin that displays the **Vision for Nexfetch** version banner — dynamically resolved from the running `nexfetch` binary (no hardcoded version):
+A small plugin that prints the Vision for Nexfetch version, read directly from the running `nexfetch` binary instead of being hardcoded:
 
 ```c
 // plugins/vision_nexfetch.c
@@ -442,7 +446,7 @@ void plugin_detect(char *out, size_t max_len)
 }
 ```
 
-Compile and register:
+Compile and register it:
 
 ```bash
 gcc -shared -fPIC -o plugins/vision_nexfetch.so plugins/vision_nexfetch.c
@@ -461,40 +465,40 @@ gcc -shared -fPIC -o plugins/vision_nexfetch.so plugins/vision_nexfetch.c
 Vision for Nexfetch: v1.1.0
 ```
 
-> **Notes:**
-> - The presenter automatically prefixes the value with the plugin name (`Vision for Nexfetch: <value>`), so `plugin_detect()` only writes the version string.
-> - On Linux/macOS, nexfetch is built with `-rdynamic` and exports the `nexfetch_version` symbol (defined in `src/module_manager.c`). The plugin resolves it at runtime via `dlsym(RTLD_DEFAULT, "nexfetch_version")` — so the version always matches the running binary, no manual updates needed.
-> - On Windows, the plugin reads the same symbol from the host executable via `GetProcAddress`.
+> Notes:
+> - The presenter adds the plugin name as a prefix on its own (`Vision for Nexfetch: <value>`), so `plugin_detect()` only needs to write the version string.
+> - On Linux/macOS, nexfetch is built with `-rdynamic` and exports the `nexfetch_version` symbol (defined in `src/module_manager.c`). The plugin resolves it at runtime with `dlsym(RTLD_DEFAULT, "nexfetch_version")`, so the version always matches the running binary and never needs a manual update.
+> - On Windows, the plugin reads the same symbol from the host executable through `GetProcAddress`.
 
-To bump the nexfetch version, only `NEXFETCH_VERSION` in `include/nexfetch.h` needs to change — the plugin picks it up automatically.
+To bump the nexfetch version, only `NEXFETCH_VERSION` in `include/nexfetch.h` needs to change; the plugin picks it up on its own.
 
-## 🎨 Themes
+## Themes
 
 | Theme | Description |
 | --- | --- |
-| `boxed` | Information displayed inside a rounded Unicode box (default) |
+| `boxed` | Info inside a rounded Unicode box (default) |
 | `classic` | Traditional neofetch-style key: value layout |
-| `modern` | Tree-style layout with `├─` / `╰─` connectors |
+| `modern` | Tree layout with `├─` / `╰─` connectors |
 
-## 🖼️ Logos
+## Logos
 
-Logos live in the `logos/` directory. nexfetch supports two formats:
+Logos live in `logos/`. nexfetch supports two formats:
 
-- **ASCII text** (`.txt`) — Plain ANSI art, loaded directly
-- **Images** (`.png`, `.jpg`, `.gif`, etc.) — Converted to ANSI art via `chafa`
+- ASCII text (`.txt`) — plain ANSI art, loaded as is
+- Images (`.png`, `.jpg`, `.gif`, etc.) — converted to ANSI art through `chafa`
 
 ### Logo resolution order
 
-1. Custom path from `config.json` `"logo"` field or `--logo` CLI flag
-2. `logos/<distro_id>.txt` (auto-detected from `/etc/os-release`)
+1. Custom path from `config.json`'s `"logo"` field, or the `--logo` flag
+2. `logos/<distro_id>.txt` (detected from `/etc/os-release`)
 3. `logos/tux.txt` (fallback)
 
 ### Built-in logos
 
 | File | Distro |
 | --- | --- |
-| `nexfetch.png` | nexfetch (project logo, image) |
-| `nexfetch.txt` | nexfetch (project logo, ASCII) |
+| `nexfetch.png` | nexfetch project logo (image) |
+| `nexfetch.txt` | nexfetch project logo (ASCII) |
 | `alpine.txt` | Alpine Linux |
 | `arch.txt` | Arch Linux |
 | `debian.txt` | Debian |
@@ -507,9 +511,9 @@ Logos live in the `logos/` directory. nexfetch supports two formats:
 
 ### Auto-scaling
 
-If the combined width of the logo and information box exceeds the terminal width, nexfetch automatically hides the logo to keep the output readable.
+If the logo and info box together don't fit the terminal width, nexfetch hides the logo so the output stays readable.
 
-## 📁 Project Structure
+## Project structure
 
 ```
 nexfetch/
@@ -545,24 +549,24 @@ nexfetch/
 │   ├── uptime.c
 │   └── ...
 ├── platform/                # Platform-specific backends
-│   ├── linux/               # Linux implementations
-│   ├── macos/               # macOS implementation
-│   └── windows/             # Windows implementation
+│   ├── linux/               # Linux implementation
+│   ├── macos/                # macOS implementation
+│   └── windows/              # Windows implementation
 ├── plugins/                 # Drop-in plugin directory (shared libs)
 ├── src/                     # Core source files
 │   ├── config.c             # JSON config parser
-│   ├── main.c               # Entry point and CLI handling
-│   ├── module_manager.c     # Module registry + plugin loader
-│   ├── presenter.c          # Theme renderers
-│   └── util.c               # Shared utilities
+│   ├── main.c                # Entry point and CLI handling
+│   ├── module_manager.c      # Module registry + plugin loader
+│   ├── presenter.c           # Theme renderers
+│   └── util.c                 # Shared utilities
 ├── Makefile                 # Build system
 ├── LICENSE                  # GPL-3.0
 └── README.md
 ```
 
-## 🔧 Building
+## Building
 
-The `Makefile` auto-detects the platform and selects the appropriate source files:
+The Makefile detects the platform and picks the right source files:
 
 ```bash
 make          # Build nexfetch
@@ -572,25 +576,25 @@ make clean    # Remove build artifacts
 
 ### Platform notes
 
-- **Linux** — Links with `-ldl` for dynamic plugin loading
-- **macOS** — Uses `platform/macos/platform_macos.c`
-- **Windows** — Uses `platform/windows/platform_windows.c`; builds `nexfetch.exe`
+- Linux: links against `-ldl` for dynamic plugin loading
+- macOS: uses `platform/macos/platform_macos.c`
+- Windows: uses `platform/windows/platform_windows.c`, builds `nexfetch.exe`
 
 ### CI/CD
 
-Every push of a `v*` tag triggers `.github/workflows/release.yml`, which builds `amd64`/`arm64`/`armhf`, packages `.deb`, `.rpm`, an `x86_64` Arch package, and `amd64`/`arm64` AppImages, then publishes them all to GitHub Releases.
+Every push of a `v*` tag triggers `.github/workflows/release.yml`, which builds `amd64`/`arm64`/`armhf`, packages `.deb`, `.rpm`, an `x86_64` Arch package, and `amd64`/`arm64` AppImages, then publishes all of them to GitHub Releases.
 
-## 📜 License
+## License
 
-This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for the full text.
 
-## 🌐 Repository
+## Repository
 
-- **Source:** [https://github.com/Hyggshi-OS-Foundation/nexfetch](https://github.com/Hyggshi-OS-Foundation/nexfetch)
-- **Issues:** [https://github.com/Hyggshi-OS-Foundation/nexfetch/issues](https://github.com/Hyggshi-OS-Foundation/nexfetch/issues)
+- Source: [https://github.com/Hyggshi-OS-Foundation/nexfetch](https://github.com/Hyggshi-OS-Foundation/nexfetch)
+- Issues: [https://github.com/Hyggshi-OS-Foundation/nexfetch/issues](https://github.com/Hyggshi-OS-Foundation/nexfetch/issues)
 
 ---
 
 <p align="center">
-  Made with ❤️ by the <a href="https://github.com/Hyggshi-OS-Foundation">Hyggshi OS Foundation</a> and <a href="https://github.com/Hyggshi-OS-Research-Technology">Hyggshi OS Research Technology</a>
+  Built by <a href="https://github.com/Hyggshi-OS-Foundation">Hyggshi OS Foundation</a> and <a href="https://github.com/Hyggshi-OS-Research-Technology">Hyggshi OS Research Technology</a>
 </p>

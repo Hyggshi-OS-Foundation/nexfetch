@@ -14,6 +14,36 @@
 
 extern size_t ansi_visible_length(const char *str);
 
+/* -------------------------------------------------------------------------
+ * Logo border helpers for animated GIF playback
+ * ------------------------------------------------------------------------- */
+#define LB_COLOR "[1;36m"
+#define LB_RESET "[0m"
+
+static void _border_h(size_t content_w, const char *left, const char *right);
+static void _border_line(const char *line, size_t content_w);
+
+static void _border_h(size_t content_w, const char *left, const char *right) {
+    printf("%s%s", LB_COLOR, left);
+    for (size_t i = 0; i < content_w; i++) printf("─");
+    printf("%s%s", right, LB_RESET);
+}
+
+static void _border_line(const char *line, size_t content_w) {
+    printf("%s│%s", LB_COLOR, LB_RESET);
+    if (line && line[0]) {
+        printf("%s", line);
+        size_t vis = ansi_visible_length(line);
+        if (vis < content_w) {
+            for (size_t i = 0; i < content_w - vis; i++) putchar(' ');
+        }
+    } else {
+        for (size_t i = 0; i < content_w; i++) putchar(' ');
+    }
+    printf("%s│%s", LB_COLOR, LB_RESET);
+}
+
+
 /* Strip ESC [ ? … h/l  (cursor-hide/show and other private-mode codes) */
 static void strip_private_modes(char *buf) {
     char out[MAX_LOGO_LINE_LEN];
@@ -88,10 +118,9 @@ static void anim_sigint_handler(int sig) {
 static void run_shell(const char *cmd) { if (system(cmd)) { /* ignored */ } }
 
 void logo_gif_animate(const char *path, int logo_width, int logo_height,
-                      int duration_secs) {
+                      int duration_secs, int fps) {
     if (!path || !path[0] || logo_width <= 0 || logo_height <= 0) return;
 
-    /* Unique temp directory so concurrent nexfetch invocations don't collide */
     char tmp_dir[256];
     snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/nexfetch_anim_%d", (int)getpid());
 
@@ -99,7 +128,7 @@ void logo_gif_animate(const char *path, int logo_width, int logo_height,
     snprintf(cmd, sizeof(cmd), "mkdir -p '%s' 2>/dev/null", tmp_dir);
     if (system(cmd) != 0) return;
 
-    /* Extract every frame of the GIF as a separate PNG using ffmpeg */
+    /* Extract frames using ffmpeg */
     snprintf(cmd, sizeof(cmd),
         "ffmpeg -y -loglevel quiet -i '%s' -vsync 0 '%s/f%%04d.png' 2>/dev/null",
         path, tmp_dir);
@@ -109,7 +138,7 @@ void logo_gif_animate(const char *path, int logo_width, int logo_height,
         return;
     }
 
-    /* Count how many frames were extracted */
+    /* Count frames */
     int frame_count = 0;
     char frame_path[512];
     for (;;) {
@@ -123,7 +152,47 @@ void logo_gif_animate(const char *path, int logo_width, int logo_height,
         return;
     }
 
-    /* Install a SIGINT handler so Ctrl+C restores the cursor cleanly */
+    /* PRE-RENDER: Chafa all frames into RAM once */
+    typedef struct {
+        char lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN];
+        int line_count;
+    } FrameBuffer;
+
+    FrameBuffer *frames = calloc((size_t)frame_count, sizeof(FrameBuffer));
+    if (!frames) {
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
+        run_shell(cmd);
+        return;
+    }
+
+    for (int f = 0; f < frame_count; f++) {
+        snprintf(frame_path, sizeof(frame_path), "%s/f%04d.png", tmp_dir, f + 1);
+        char chafa_cmd[1024];
+        snprintf(chafa_cmd, sizeof(chafa_cmd),
+            "chafa --animate=off --size %dx%d --format symbols '%s' 2>/dev/null",
+            logo_width, logo_height, frame_path);
+
+        FILE *fp = popen(chafa_cmd, "r");
+        if (fp) {
+            char line[MAX_LOGO_LINE_LEN * 4];
+            int row = 0;
+            while (fgets(line, sizeof(line), fp) && row < MAX_LOGO_LINES) {
+                size_t len = strlen(line);
+                if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
+                strip_private_modes(line);
+                snprintf(frames[f].lines[row], MAX_LOGO_LINE_LEN, "%s", line);
+                row++;
+            }
+            frames[f].line_count = row;
+            pclose(fp);
+        }
+    }
+
+    /* Clean up temp frames immediately after pre-render */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
+    run_shell(cmd);
+
+    /* Install SIGINT handler */
     struct sigaction sa_old, sa_new;
     sa_new.sa_handler = anim_sigint_handler;
     sigemptyset(&sa_new.sa_mask);
@@ -136,57 +205,58 @@ void logo_gif_animate(const char *path, int logo_width, int logo_height,
     fflush(stdout);
 
     time_t start_t = time(NULL);
-    int frame_idx  = 1;
+    int frame_idx = 0;
+    size_t content_w = (size_t)logo_width;
 
+    /* Animation loop: blit pre-rendered frames at 60 FPS */
     while (!s_anim_stop) {
         if (duration_secs > 0 && (int)(time(NULL) - start_t) >= duration_secs) break;
 
-        snprintf(frame_path, sizeof(frame_path), "%s/f%04d.png", tmp_dir, frame_idx);
+        FrameBuffer *fb = &frames[frame_idx];
+        int rows = fb->line_count < logo_height ? fb->line_count : logo_height;
 
-        /* Render this frame via chafa (symbols, no animation) */
-        char chafa_cmd[1024];
-        snprintf(chafa_cmd, sizeof(chafa_cmd),
-            "chafa --animate=off --size %dx%d --format symbols '%s' 2>/dev/null",
-            logo_width, logo_height, frame_path);
+        /* Top border */
+        printf("\033[1;1H");
+        _border_h(content_w, "╭", "╮");
 
-        FILE *fp = popen(chafa_cmd, "r");
-        if (fp) {
-            char line[MAX_LOGO_LINE_LEN * 4];
-            int row = 1;
-            while (fgets(line, sizeof(line), fp) && row <= logo_height) {
-                size_t len = strlen(line);
-                if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
-                strip_private_modes(line);
-                /* Move cursor to absolute (row, col 1) and paint the logo line */
-                printf("\033[%d;1H%s\033[0m", row, line);
-                row++;
-            }
-            pclose(fp);
+        /* Content lines */
+        for (int r = 0; r < rows; r++) {
+            printf("\033[%d;1H", r + 2);
+            _border_line(fb->lines[r], content_w);
+            printf("\033[0m");
         }
+
+        /* Pad missing lines */
+        for (int r = rows; r < logo_height; r++) {
+            printf("\033[%d;1H", r + 2);
+            _border_line("", content_w);
+        }
+
+        /* Bottom border */
+        printf("\033[%d;1H", logo_height + 2);
+        _border_h(content_w, "╰", "╯");
+
         fflush(stdout);
+        int usec = fps > 0 ? (1000000 / fps) : 16666;
+        usleep(usec);
 
-        usleep(83000); /* ~83 ms ≈ 12 fps */
-
-        /* Advance frame, wrapping at the end */
-        frame_idx = (frame_idx % frame_count) + 1;
+        frame_idx = (frame_idx + 1) % frame_count;
     }
 
     /* Restore cursor visibility and move below the animated area */
     fputs("\033[?25h", stdout);
-    printf("\033[%d;1H\n", logo_height + 1);
+    printf("\033[%d;1H\n", logo_height + 3);
     fflush(stdout);
 
     /* Restore original SIGINT handler */
     sigaction(SIGINT, &sa_old, NULL);
-
-    /* Remove the temp frames */
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s' 2>/dev/null", tmp_dir);
-    run_shell(cmd);
+    free(frames);
 }
+
 #else
 /* Stub: animated GIF logos not yet supported on Windows */
 void logo_gif_animate(const char *path, int logo_width, int logo_height,
-                      int duration_secs) {
+                      int duration_secs, int fps) {
     (void)path; (void)logo_width; (void)logo_height; (void)duration_secs;
 }
 #endif

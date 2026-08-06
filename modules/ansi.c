@@ -189,7 +189,19 @@ void ansi_slice_columns_ex(const char *src, size_t start_col, size_t width,
 
         if (unit_bytes == 0) break; /* safety against malformed input */
 
-        int in_window = (unit_cols == 0) || (col >= start_col && col < start_col + width);
+        /* SGR sequences (unit_cols == 0) are always copied while the window
+         * is open so the slice carries the right color state. Glyphs must
+         * fit entirely inside [start_col, start_col + width): a double-width
+         * character starting on the last column would otherwise extend past
+         * the window, making cols_written > width. overlay_text() then
+         * cursor-backs by width (not the extra column), leaving a stray
+         * background block visible after the field text. */
+        int in_window;
+        if (unit_cols == 0) {
+            in_window = 1;
+        } else {
+            in_window = (col >= start_col && col + unit_cols <= start_col + width);
+        }
         if (in_window && out_len + unit_bytes < out_size - 1) {
             memcpy(out + out_len, p, unit_bytes);
             out_len += unit_bytes;

@@ -62,6 +62,7 @@ dkms.conf
 *.dsc
 *.tar.gz
 *.tar.xz
+*.zip
 dist/
 debian/nexfetch/
 debian/.debhelper/
@@ -69,3 +70,6 @@ debian/debhelper-build-stamp
 debian/files
 debian/nexfetch.debhelper.log
 debian/nexfetch.substvars
+
+# folder
+gg

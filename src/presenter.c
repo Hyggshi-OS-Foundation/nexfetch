@@ -210,6 +210,22 @@ static void truncate_visible(const char *src, size_t max_w, char *out, size_t ou
 #define TEXT_MARGIN 4
 
 /*
+ * append_text_margin() fills the TEXT_MARGIN gap after a row's last field.
+ * Uses overlay_text() with spaces (not strcat_forward()/bg_slice alone) so
+ * chafa block glyphs from the captured background are overwritten instead of
+ * left visible as stray boxes after values like "[Charging]" or "(wlp0s20f3)".
+ */
+
+/* Forward declaration -- overlay_text is defined further down. */
+static void overlay_text(char *dst, size_t dst_size, int row, size_t abs_col,
+                         size_t vis_width, const char *color_prefix, const char *text);
+
+static void append_text_margin(char *dst, size_t dst_size, int row, size_t col) {
+    overlay_text(dst, dst_size, row, col, TEXT_MARGIN, "\033[39m", "    ");
+    append_bounded(dst, dst_size, "\033[49m");
+}
+
+/*
  * overlay_text() appends a text segment to `dst`, first redrawing the
  * captured background pixels for the exact cells the segment is about to
  * occupy, then moving the cursor back over them and drawing the real text
@@ -491,11 +507,39 @@ void render_background(const char *image_path, int content_rows) {
     while (fgets(line, sizeof(line), fp)) {
         if (s_bg_row_count >= bg_rows) break;
 
-        fputs(line, stdout);
-
         size_t len = strlen(line);
         int has_newline = (len > 0 && line[len - 1] == '\n');
         if (has_newline) line[--len] = '\0';
+
+        /*
+         * Clip any row wider than the terminal down to `cols` columns
+         * BEFORE it is streamed (and captured). A row wider than the
+         * terminal would otherwise WRAP when printed: the wrapped fragment
+         * lands at the start of the next physical line, so screen row N
+         * shows the tail of image row N-1 followed by a sliver of row N,
+         * while s_bg_lines[] still records each input line as exactly one
+         * row. overlay_text()/bg_slice() later splice background pixels for
+         * screen row N from that one-row capture, which no longer matches
+         * what is really on screen -- producing exactly the reported
+         * patchiness where some lines carry the opaque image (dark
+         * "selection highlight" blocks) and neighboring lines fall through
+         * to the terminal's transparent wallpaper.
+         *
+         * Clipping to `cols` guarantees each captured/streamed row maps
+         * 1:1 to one on-screen line. Chafa is already asked for
+         * `--size cols x bg_rows` so its rows are never wider than the
+         * terminal; this guard only fires for pre-rendered .txt
+         * backgrounds (or any other input whose rows exceed the width).
+         */
+        char rowbuf[MAX_BG_LINE_LEN];
+        const char *row = line;
+        if (ansi_visible_length(line) > (size_t)cols) {
+            ansi_slice_columns_ex(line, 0, (size_t)cols, rowbuf, sizeof(rowbuf), 0);
+            row = rowbuf;
+        }
+
+        fputs(row, stdout);
+        if (has_newline) fputc('\n', stdout);
 
         if (s_bg_row_count < MAX_BG_ROWS) {
             char *dst = s_bg_lines[s_bg_row_count];
@@ -520,14 +564,15 @@ void render_background(const char *image_path, int content_rows) {
 
             if (used < MAX_BG_LINE_LEN - 1) {
                 size_t room = MAX_BG_LINE_LEN - 1 - used;
-                size_t copy_len = len < room ? len : room;
-                memcpy(dst + used, line, copy_len);
+                size_t rowlen = strlen(row);
+                size_t copy_len = rowlen < room ? rowlen : room;
+                memcpy(dst + used, row, copy_len);
                 dst[used + copy_len] = '\0';
             }
 
             /* Update carried state from this line's OWN color codes so it's
                ready for whatever the NEXT line needs. */
-            sgr_carry_scan_line(&carry, line);
+            sgr_carry_scan_line(&carry, row);
 
             if (has_newline) s_bg_row_count++;
         }
@@ -540,6 +585,138 @@ void render_background(const char *image_path, int content_rows) {
     fputs("\033[0m", stdout);
     fputs("\033[H", stdout);
     fflush(stdout);
+}
+
+/*
+ * Logo border helpers.
+ * Adds a box-drawing border around the logo area.
+ */
+#define LB_COLOR "[1;36m"
+#define LB_RESET "[0m"
+
+static size_t logo_content_width(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN],
+                                 int logo_count) {
+    size_t max_w = 0;
+    for (int i = 0; i < logo_count; i++) {
+        if (!logo_lines[i][0]) continue;
+        size_t w = ansi_visible_length(logo_lines[i]);
+        if (w > max_w) max_w = w;
+    }
+    return max_w;
+}
+
+/* Print a horizontal border line (top or bottom) at absolute row `row`.
+ * `left` = "╭" or "╰", `right` = "╮" or "╯", `mid` = "─".
+ */
+static void logo_border_h(size_t content_w, int row,
+                          const char *left, const char *right) {
+    size_t total_w = content_w + 2;
+    if (s_bg_active && row >= 0 && row < s_bg_row_count) {
+        char slice[MAX_BG_LINE_LEN];
+        ansi_slice_columns_ex(s_bg_lines[row], 0, total_w, slice, sizeof(slice), 0);
+        if (slice[0]) {
+            printf("%s[%zuD", slice, total_w);
+        } else {
+            printf("[49m");
+        }
+    } else {
+        printf("[49m");
+    }
+    printf("%s%s", LB_COLOR, left);
+    for (size_t i = 0; i < content_w; i++) printf("─");
+    printf("%s%s", right, LB_RESET);
+}
+
+/* Print one content row of the bordered logo.
+ * `line` may be NULL/empty for spacer rows.
+ */
+static void logo_border_line(const char *line, size_t content_w, int row) {
+    /* Left │ */
+    if (s_bg_active && row >= 0 && row < s_bg_row_count) {
+        char slice[MAX_BG_LINE_LEN];
+        ansi_slice_columns_ex(s_bg_lines[row], 0, 1, slice, sizeof(slice), 0);
+        if (slice[0]) printf("%s[1D", slice);
+        else          printf("[49m");
+    } else {
+        printf("[49m");
+    }
+    printf("%s│%s", LB_COLOR, LB_RESET);
+
+    /* Content */
+    if (line && line[0]) {
+        printf("%s", line);
+        size_t vis = ansi_visible_length(line);
+        if (vis < content_w) {
+            size_t pad = content_w - vis;
+            size_t start_col = 1 + vis;
+            if (s_bg_active && row >= 0 && row < s_bg_row_count) {
+                char slice[MAX_BG_LINE_LEN];
+                ansi_slice_columns_ex(s_bg_lines[row], start_col, pad,
+                                      slice, sizeof(slice), 0);
+                if (slice[0]) printf("%s[%zuD", slice, pad);
+                else for (size_t i = 0; i < pad; i++) putchar(' ');
+            } else {
+                for (size_t i = 0; i < pad; i++) putchar(' ');
+            }
+        }
+    } else {
+        if (s_bg_active && row >= 0 && row < s_bg_row_count) {
+            char slice[MAX_BG_LINE_LEN];
+            ansi_slice_columns_ex(s_bg_lines[row], 1, content_w,
+                                  slice, sizeof(slice), 0);
+            if (slice[0]) printf("%s[%zuD", slice, content_w);
+            else for (size_t i = 0; i < content_w; i++) putchar(' ');
+        } else {
+            for (size_t i = 0; i < content_w; i++) putchar(' ');
+        }
+    }
+
+    /* Right │ */
+    size_t right_col = 1 + content_w;
+    if (s_bg_active && row >= 0 && row < s_bg_row_count) {
+        char slice[MAX_BG_LINE_LEN];
+        ansi_slice_columns_ex(s_bg_lines[row], right_col, 1,
+                              slice, sizeof(slice), 0);
+        if (slice[0]) printf("%s[1D", slice);
+        else          printf("[49m");
+    } else {
+        printf("[49m");
+    }
+    printf("%s│%s", LB_COLOR, LB_RESET);
+}
+
+/*
+ * Unified logo printer: handles top border, content lines, bottom border.
+ * Returns the total visual width of the bordered logo (content_w + 2).
+ */
+static size_t print_logo_row(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN],
+                             int logo_count, size_t content_w,
+                             int row, size_t max_logo_width) {
+    size_t bordered_w = content_w + 2;
+
+    if (logo_count <= 0) {
+        /* No logo content: print an empty bordered box */
+        if (row == 0) {
+            logo_border_h(content_w, row, "╭", "╮");
+        } else if (row == 1) {
+            logo_border_line("", content_w, row);
+        } else {
+            logo_border_h(content_w, row, "╰", "╯");
+        }
+    } else {
+        if (row == 0) {
+            logo_border_h(content_w, row, "╭", "╮");
+        } else if (row == logo_count + 1) {
+            logo_border_h(content_w, row, "╰", "╯");
+        } else {
+            const char *line = logo_lines[row - 1];
+            logo_border_line(line, content_w, row);
+        }
+    }
+
+    /* Padding to align with info panel */
+    pad_logo_column(row, bordered_w, max_logo_width + 2);
+    return bordered_w;
 }
 
 /* --- Classic Presenter ----------------------------------------------------- */
@@ -558,10 +735,10 @@ static void render_classic(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_L
     {
         size_t uh_w = ansi_visible_length(user_host);
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, logo_offset,
-                     uh_w, "\033[39m", user_host);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN,
-                       info_count, logo_offset + uh_w);
+                     uh_w, "[39m", user_host);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF,
+                           info_count, logo_offset + uh_w);
         info_count++;
     }
 
@@ -570,9 +747,9 @@ static void render_classic(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_L
         size_t sep_w = ansi_visible_length(separator);
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, logo_offset,
                      sep_w, COLOR_SEP, separator);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m" COLOR_RESET);
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN,
-                       info_count, logo_offset + sep_w);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m" COLOR_RESET);
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF,
+                           info_count, logo_offset + sep_w);
         info_count++;
     }
 
@@ -584,20 +761,20 @@ static void render_classic(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_L
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
                      kw, COLOR_KEY, results[i].key);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m" COLOR_RESET);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m" COLOR_RESET);
         col += kw;
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
-                     2, "\033[39m", ": ");
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
+                     2, "[39m", ": ");
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
         col += 2;
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
                      vw, COLOR_VALUE, results[i].val);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m" COLOR_RESET);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m" COLOR_RESET);
         col += vw;
 
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN, info_count, col);
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col);
         info_count++;
     }
 
@@ -607,20 +784,22 @@ static void render_classic(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_L
         module_detect_color(color_bar, sizeof(color_bar));
         size_t cb_w = ansi_visible_length(color_bar);
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, logo_offset,
-                     cb_w, "\033[39m", color_bar);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN,
-                       info_count, logo_offset + cb_w);
+                     cb_w, "[39m", color_bar);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF,
+                           info_count, logo_offset + cb_w);
         info_count++;
     }
 
-    int total_rows = logo_count > info_count ? logo_count : info_count;
+    size_t content_w = g_config.show_logo ? logo_content_width(logo_lines, logo_count) : 0;
+    int logo_total = g_config.show_logo ? (logo_count + 2) : 0; /* +2 for top/bottom border */
+    int total_rows = logo_total > info_count ? logo_total : info_count;
+
     for (int r = 0; r < total_rows; r++) {
-        if (g_config.show_logo) {
-            const char *l_line = r < logo_count ? logo_lines[r] : "";
-            size_t vis_w = ansi_visible_length(l_line);
-            printf("%s" COLOR_RESET, l_line);
-            pad_logo_column(r, vis_w, max_logo_width);
+        if (g_config.show_logo && r < logo_total) {
+            print_logo_row(logo_lines, logo_count, content_w, r, max_logo_width);
+        } else if (g_config.show_logo) {
+            pad_logo_column(r, 0, max_logo_width + 2);
         }
         if (r < info_count) printf("%s", info_lines[r]);
         printf("\n");
@@ -656,28 +835,17 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
 
     size_t logo_offset = g_config.show_logo ? (max_logo_width + LOGO_PADDING) : 0;
 
-    /*
-     * Clamp box_inner_w to what the real terminal can actually show. Without
-     * this, a long value (a verbose GPU name, a long distro string, etc.)
-     * pushes box_inner_w past the terminal's column count, the fixed-width
-     * "╭──...──╮" border no longer matches what actually fits on one row,
-     * and the row wraps -- visually breaking the box on narrow terminals.
-     */
     {
         int term_width = get_presenter_terminal_width();
-        int avail = term_width - (int)logo_offset - 2 /* "│" + "│" */;
+        int avail = term_width - (int)logo_offset - 2;
         if (avail < MIN_BOX_INNER_W) avail = MIN_BOX_INNER_W;
 
         if ((int)box_inner_w > avail) {
             box_inner_w = (size_t)avail;
-
-            size_t overhead = 3 + 2; /* " : " + " " lead + right pad slack */
+            size_t overhead = 3 + 2;
             if (box_inner_w > max_key_w + overhead) {
                 max_val_w = box_inner_w - max_key_w - overhead;
             } else {
-                /* Key itself doesn't fit either -- split the available
-                   width between key and value instead of letting key
-                   consume it all. */
                 max_key_w = box_inner_w > overhead ? (box_inner_w - overhead) / 2 : 1;
                 max_val_w = box_inner_w > max_key_w + overhead
                           ? box_inner_w - max_key_w - overhead : 1;
@@ -689,74 +857,59 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
     memset(info_lines, 0, sizeof(info_lines));
     int info_count = 0;
 
-    /* Top border -- border glyphs aren't field text, left unchanged (no
-       image content to blend into that matters for a solid border line). */
-    char top[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m╭";
+    char top[PRESENTER_LINE_BUF] = "[49m[1;36m╭";
     append_repeat_bounded(top, sizeof(top), "─", box_inner_w);
-    strncat(top, "╮\033[0m", sizeof(top) - strlen(top) - 1);
+    strncat(top, "╮[0m", sizeof(top) - strlen(top) - 1);
     snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", top);
 
-    /* Header row: │ hyggshi@hostname          │
-       Built directly: left border, a leading space, then user_host drawn
-       over the real background, then padding to the box edge, then the
-       right border. (No placeholder/no-op calls here -- build it once.) */
     char header_row[PRESENTER_LINE_BUF] = "";
-    append_bounded(header_row, sizeof(header_row), "\033[49m\033[1;36m│\033[0m\033[49m ");
-    size_t h_col = logo_offset + 2; /* "│ " */
+    append_bounded(header_row, sizeof(header_row), "[49m[1;36m│[0m[49m ");
+    size_t h_col = logo_offset + 2;
     char user_host_trunc[PRESENTER_LINE_BUF];
     size_t h_max_w = box_inner_w > 1 ? box_inner_w - 1 : 0;
     truncate_visible(user_host, h_max_w, user_host_trunc, sizeof(user_host_trunc));
     user_host_w = ansi_visible_length(user_host_trunc);
-    overlay_text(header_row, sizeof(header_row), info_count, h_col, user_host_w, "\033[39m", user_host_trunc);
-    append_bounded(header_row, sizeof(header_row), "\033[49m");
+    overlay_text(header_row, sizeof(header_row), info_count, h_col, user_host_w, "[39m", user_host_trunc);
+    append_bounded(header_row, sizeof(header_row), "[49m");
     size_t h_vis_pad = box_inner_w > (user_host_w + 1) ? box_inner_w - (user_host_w + 1) : 0;
     strcat_forward(header_row, sizeof(header_row), h_vis_pad, info_count, h_col + user_host_w);
-    append_bounded(header_row, sizeof(header_row), "\033[1;36m│\033[0m");
+    append_bounded(header_row, sizeof(header_row), "[1;36m│[0m");
     snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", header_row);
 
-    /* Divider row -- border glyphs, unchanged. */
-    char div[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m├";
+    char div[PRESENTER_LINE_BUF] = "[49m[1;36m├";
     append_repeat_bounded(div, sizeof(div), "─", box_inner_w);
-    strncat(div, "┤\033[0m", sizeof(div) - strlen(div) - 1);
+    strncat(div, "┤[0m", sizeof(div) - strlen(div) - 1);
     snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", div);
 
-    /* Data rows: │ OS         : Ubuntu 26.04   │ */
     for (int i = 0; i < result_count; i++) {
-        char row[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m│\033[0m\033[49m ";
-
-        /* Truncate key/value to max_key_w/max_val_w -- these may have been
-         * shrunk below an individual field's natural width by the terminal-
-         * width clamp above. Without this, kw/vw could exceed max_key_w/
-         * max_val_w and "max_key_w - kw" below would underflow (size_t),
-         * producing a huge padding count and garbled output -- the exact
-         * kind of broken layout this fix is for. */
+        char row[PRESENTER_LINE_BUF] = "[49m[1;36m│[0m[49m ";
         char key_trunc[PRESENTER_LINE_BUF];
         char val_trunc[PRESENTER_LINE_BUF];
         truncate_visible(results[i].key, max_key_w, key_trunc, sizeof(key_trunc));
         truncate_visible(results[i].val, max_val_w, val_trunc, sizeof(val_trunc));
         size_t kw = ansi_visible_length(key_trunc);
         size_t vw = ansi_visible_length(val_trunc);
-        size_t col = logo_offset + 2; /* "│ " */
+        size_t col = logo_offset + 2;
 
         overlay_text(row, sizeof(row), info_count, col, kw, COLOR_KEY, key_trunc);
-        append_bounded(row, sizeof(row), "\033[49m" COLOR_RESET);
+        append_bounded(row, sizeof(row), "[49m" COLOR_RESET);
         col += kw;
 
         strcat_forward(row, sizeof(row), max_key_w - kw, info_count, col);
         col += (max_key_w - kw);
 
-        overlay_text(row, sizeof(row), info_count, col, 3, "\033[39m", " : ");
-        append_bounded(row, sizeof(row), "\033[49m");
+        overlay_text(row, sizeof(row), info_count, col, 3, "[39m", " : ");
+        append_bounded(row, sizeof(row), "[49m");
         col += 3;
 
         overlay_text(row, sizeof(row), info_count, col, vw, COLOR_VALUE, val_trunc);
-        append_bounded(row, sizeof(row), "\033[49m" COLOR_RESET);
+        append_bounded(row, sizeof(row), "[49m" COLOR_RESET);
         col += vw;
 
         size_t cur_vis = 1 + 1 + kw + (max_key_w - kw) + 3 + vw;
         size_t r_pad = box_inner_w > cur_vis ? box_inner_w - cur_vis : 0;
         strcat_forward(row, sizeof(row), r_pad, info_count, col);
-        append_bounded(row, sizeof(row), "\033[1;36m│\033[0m");
+        append_bounded(row, sizeof(row), "[1;36m│[0m");
 
         snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", row);
     }
@@ -766,29 +919,30 @@ static void render_boxed(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN
         module_detect_color(color_bar, sizeof(color_bar));
         size_t cb_vis = ansi_visible_length(color_bar);
 
-        char cb_row[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m│\033[0m\033[49m ";
+        char cb_row[PRESENTER_LINE_BUF] = "[49m[1;36m│[0m[49m ";
         size_t cb_col = logo_offset + 2;
-        overlay_text(cb_row, sizeof(cb_row), info_count, cb_col, cb_vis, "\033[39m", color_bar);
-        append_bounded(cb_row, sizeof(cb_row), "\033[49m" COLOR_RESET);
+        overlay_text(cb_row, sizeof(cb_row), info_count, cb_col, cb_vis, "[39m", color_bar);
+        append_bounded(cb_row, sizeof(cb_row), "[49m" COLOR_RESET);
         size_t cb_pad = box_inner_w > (cb_vis + 1) ? box_inner_w - (cb_vis + 1) : 0;
         strcat_forward(cb_row, sizeof(cb_row), cb_pad, info_count, cb_col + cb_vis);
-        append_bounded(cb_row, sizeof(cb_row), "\033[1;36m│\033[0m");
+        append_bounded(cb_row, sizeof(cb_row), "[1;36m│[0m");
         snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", cb_row);
     }
 
-    /* Bottom border -- border glyphs, unchanged. */
-    char bot[PRESENTER_LINE_BUF] = "\033[49m\033[1;36m╰";
+    char bot[PRESENTER_LINE_BUF] = "[49m[1;36m╰";
     append_repeat_bounded(bot, sizeof(bot), "─", box_inner_w);
-    strncat(bot, "╯\033[0m", sizeof(bot) - strlen(bot) - 1);
+    strncat(bot, "╯[0m", sizeof(bot) - strlen(bot) - 1);
     snprintf(info_lines[info_count++], PRESENTER_LINE_BUF, "%s", bot);
 
-    int total_rows = logo_count > info_count ? logo_count : info_count;
+    size_t content_w = g_config.show_logo ? logo_content_width(logo_lines, logo_count) : 0;
+    int logo_total = g_config.show_logo ? (logo_count + 2) : 0;
+    int total_rows = logo_total > info_count ? logo_total : info_count;
+
     for (int r = 0; r < total_rows; r++) {
-        if (g_config.show_logo) {
-            const char *l_line = r < logo_count ? logo_lines[r] : "";
-            size_t vis_w = ansi_visible_length(l_line);
-            printf("%s" COLOR_RESET, l_line);
-            pad_logo_column(r, vis_w, max_logo_width);
+        if (g_config.show_logo && r < logo_total) {
+            print_logo_row(logo_lines, logo_count, content_w, r, max_logo_width);
+        } else if (g_config.show_logo) {
+            pad_logo_column(r, 0, max_logo_width + 2);
         }
         if (r < info_count) printf("%s", info_lines[r]);
         printf("\n");
@@ -812,42 +966,39 @@ static void render_modern(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LE
     {
         size_t uh_w = ansi_visible_length(user_host);
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, logo_offset,
-                     uh_w, "\033[39m", user_host);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN,
-                       info_count, logo_offset + uh_w);
+                     uh_w, "[39m", user_host);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF,
+                           info_count, logo_offset + uh_w);
         info_count++;
     }
 
     for (int i = 0; i < result_count; i++) {
-        const char *connector = (i == result_count - 1) ? "\033[1;36m╰─\033[0m " : "\033[1;36m├─\033[0m ";
+        const char *connector = (i == result_count - 1) ? "[1;36m╰─[0m " : "[1;36m├─[0m ";
         size_t conn_w = ansi_visible_length(connector);
         size_t kw = ansi_visible_length(results[i].key);
         size_t vw = ansi_visible_length(results[i].val);
         size_t col = logo_offset;
 
-        /* Connector glyphs kept as literal output (unchanged) -- they're
-           short box-drawing symbols, not the kind of field text this fix
-           targets, and always have their own explicit color already. */
         append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, connector);
         col += conn_w;
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
                      kw, COLOR_KEY, results[i].key);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m" COLOR_RESET);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m" COLOR_RESET);
         col += kw;
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
-                     2, "\033[39m", ": ");
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
+                     2, "[39m", ": ");
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
         col += 2;
 
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
                      vw, COLOR_VALUE, results[i].val);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m" COLOR_RESET);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m" COLOR_RESET);
         col += vw;
 
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN, info_count, col);
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col);
         info_count++;
     }
 
@@ -855,23 +1006,25 @@ static void render_modern(const char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LE
         char color_bar[PRESENTER_LINE_BUF] = "";
         module_detect_color(color_bar, sizeof(color_bar));
         size_t cb_w = ansi_visible_length(color_bar);
-        size_t col = logo_offset + 3; /* matches original "   " lead-in */
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m   ");
+        size_t col = logo_offset + 3;
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m   ");
         overlay_text(info_lines[info_count], PRESENTER_LINE_BUF, info_count, col,
-                     cb_w, "\033[39m", color_bar);
-        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "\033[49m");
-        strcat_forward(info_lines[info_count], PRESENTER_LINE_BUF, TEXT_MARGIN,
-                       info_count, col + cb_w);
+                     cb_w, "[39m", color_bar);
+        append_bounded(info_lines[info_count], PRESENTER_LINE_BUF, "[49m");
+        append_text_margin(info_lines[info_count], PRESENTER_LINE_BUF,
+                           info_count, col + cb_w);
         info_count++;
     }
 
-    int total_rows = logo_count > info_count ? logo_count : info_count;
+    size_t content_w = g_config.show_logo ? logo_content_width(logo_lines, logo_count) : 0;
+    int logo_total = g_config.show_logo ? (logo_count + 2) : 0;
+    int total_rows = logo_total > info_count ? logo_total : info_count;
+
     for (int r = 0; r < total_rows; r++) {
-        if (g_config.show_logo) {
-            const char *l_line = r < logo_count ? logo_lines[r] : "";
-            size_t vis_w = ansi_visible_length(l_line);
-            printf("%s" COLOR_RESET, l_line);
-            pad_logo_column(r, vis_w, max_logo_width);
+        if (g_config.show_logo && r < logo_total) {
+            print_logo_row(logo_lines, logo_count, content_w, r, max_logo_width);
+        } else if (g_config.show_logo) {
+            pad_logo_column(r, 0, max_logo_width + 2);
         }
         if (r < info_count) printf("%s", info_lines[r]);
         printf("\n");

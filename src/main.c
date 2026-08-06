@@ -24,7 +24,7 @@
 
 extern void config_init(void);
 extern int  logo_load(const char *distro_id, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
-extern void logo_gif_animate(const char *path, int logo_width, int logo_height, int duration_secs);
+extern void logo_gif_animate(const char *path, int logo_width, int logo_height, int duration_secs, int fps);
 extern size_t ansi_visible_length(const char *str);
 
 /* Module detectors */
@@ -93,7 +93,7 @@ static void *module_worker_runner(void *arg) {
  * detached thread keeps running invisibly in the background, but since it
  * is never joined again, main() is free to finish and exit -- the process
  * exit takes it down with it. */
-#define NEXFETCH_MODULE_TIMEOUT_MS 150
+#define NEXFETCH_MODULE_TIMEOUT_MS 80
 
 static void compute_deadline(struct timespec *ts, int timeout_ms) {
     clock_gettime(CLOCK_REALTIME, ts);
@@ -287,6 +287,13 @@ int main(int argc, char *argv[]) {
             int d = atoi(argv[++i]);
             if (d >= 0) g_config.logo_animate_duration = d;
         }
+        if (strcmp(argv[i], "--fps") == 0 && i + 1 < argc) {
+            int fps = atoi(argv[++i]);
+            if (fps > 0) g_config.logo_fps = fps;
+        }
+        if (strcmp(argv[i], "--fast") == 0) {
+            g_config.logo_animate = 0;  /* skip animation */
+        }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("nexfetch - Modern Modular System Fetch CLI\n");
             printf("Usage: nexfetch [options]\n\n");
@@ -297,6 +304,8 @@ int main(int argc, char *argv[]) {
             printf("  --logo <path>                  Use custom ASCII, PNG/JPG/GIF or MP4 logo\n");
             printf("  --animate                      Animate GIF logo after initial render\n");
             printf("  --animate-duration <secs>      Seconds to animate (0 = until Ctrl+C)\n");
+            printf("  --fps <n>                      Animation FPS (default 60)\n");
+            printf("  --fast                         Skip animation, minimize modules\n");
             printf("  --bg <path>                    Render image as full-terminal background\n");
             printf("  --no-bg                        Disable background image\n");
             printf("  --theme <name>                 Set theme (boxed, classic, modern)\n");
@@ -536,7 +545,8 @@ int main(int argc, char *argv[]) {
         }
         if (_is_gif) {
             int _lw = g_config.logo_width > 0 ? g_config.logo_width : 32;
-            logo_gif_animate(_lp, _lw, logo_count, g_config.logo_animate_duration);
+            int _fps = g_config.logo_fps > 0 ? g_config.logo_fps : 60;
+            logo_gif_animate(_lp, _lw, logo_count, g_config.logo_animate_duration, _fps);
         }
     }
 #endif
