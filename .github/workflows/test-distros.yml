@@ -40,6 +40,16 @@ jobs:
             image: voidlinux/voidlinux:latest
           - name: Rocky Linux
             image: rockylinux:9
+          - name: Xubuntu
+            image: ubuntu:24.04
+          - name: Kubuntu
+            image: ubuntu:24.04
+          - name: Lubuntu
+            image: ubuntu:24.04
+          - name: CachyOS
+            image: cachyos/cachyos:latest
+          - name: NixOS
+            image: nixos/nix:latest
 
     steps:
       # Install build tools using each distro's own package manager
@@ -83,7 +93,39 @@ jobs:
 
       - name: Install dependencies (Void Linux)
         if: matrix.name == 'Void Linux'
-        run: xbps-install -Syu --yes base-devel git
+        run: |
+          # The container's default repo (alpha.de.repo.voidlinux.org) has a
+          # recurring TLS cert/hostname mismatch. Point at the Fastly-backed
+          # mirror instead, sync xbps itself first, then install packages.
+          xbps-install -Syu --yes -R https://repo-fastly.voidlinux.org/current xbps
+          xbps-install -Syu --yes -R https://repo-fastly.voidlinux.org/current base-devel git
+
+      - name: Install dependencies (Xubuntu)
+        if: matrix.name == 'Xubuntu'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (Kubuntu)
+        if: matrix.name == 'Kubuntu'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (Lubuntu)
+        if: matrix.name == 'Lubuntu'
+        run: |
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (CachyOS)
+        if: matrix.name == 'CachyOS'
+        run: pacman -Syu --noconfirm --needed base-devel git
+
+      - name: Install dependencies (NixOS)
+        if: matrix.name == 'NixOS'
+        run: |
+          nix-env -iA nixpkgs.gcc nixpkgs.gnumake nixpkgs.git
 
       - name: Install dependencies (Rocky Linux)
         if: matrix.name == 'Rocky Linux'
