@@ -50,6 +50,10 @@ jobs:
             image: cachyos/cachyos:latest
           - name: NixOS
             image: nixos/nix:latest
+          - name: CaramOS
+            image: ubuntu:24.04
+          - name: Gentoo
+            image: gentoo/stage3:latest
 
     steps:
       # Install build tools using each distro's own package manager
@@ -125,7 +129,27 @@ jobs:
       - name: Install dependencies (NixOS)
         if: matrix.name == 'NixOS'
         run: |
-          nix-env -iA nixpkgs.gcc nixpkgs.gnumake nixpkgs.git
+          # nixos/nix already ships git-minimal in the default profile (used
+          # internally by Nix for flake fetching). Also installing the full
+          # 'git' package collides with it on shared files like
+          # git-mergetool, so only add gcc/make here and rely on the
+          # git-minimal already on PATH for actions/checkout.
+          nix-env -iA nixpkgs.gcc nixpkgs.gnumake
+
+      - name: Install dependencies (CaramOS)
+        if: matrix.name == 'CaramOS'
+        run: |
+          # CaramOS is an ISO-remaster distro (Linux Mint 22.3 Cinnamon /
+          # Ubuntu 24.04 LTS base) with no standalone container image, so
+          # it's tested here on its Ubuntu 24.04 base toolchain.
+          apt-get update
+          apt-get install -y build-essential git
+
+      - name: Install dependencies (Gentoo)
+        if: matrix.name == 'Gentoo'
+        run: |
+          emerge-webrsync
+          emerge --getbinpkg sys-devel/gcc sys-devel/make dev-vcs/git
 
       - name: Install dependencies (Rocky Linux)
         if: matrix.name == 'Rocky Linux'
