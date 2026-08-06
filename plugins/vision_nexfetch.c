@@ -1,4 +1,5 @@
-// vision_nexfetch.c — Plugin "Vision for Nexfetch": hiển thị phiên bản Vision động
+// vision_nexfetch.c — Plugin "Vision for Nexfetch"
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
