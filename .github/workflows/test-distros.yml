@@ -48,8 +48,6 @@ jobs:
             image: ubuntu:24.04
           - name: CachyOS
             image: cachyos/cachyos:latest
-          - name: NixOS
-            image: nixos/nix:latest
           - name: CaramOS
             image: ubuntu:24.04
           - name: Gentoo
@@ -126,16 +124,6 @@ jobs:
         if: matrix.name == 'CachyOS'
         run: pacman -Syu --noconfirm --needed base-devel git
 
-      - name: Install dependencies (NixOS)
-        if: matrix.name == 'NixOS'
-        run: |
-          # nixos/nix already ships git-minimal in the default profile (used
-          # internally by Nix for flake fetching). Also installing the full
-          # 'git' package collides with it on shared files like
-          # git-mergetool, so only add gcc/make here and rely on the
-          # git-minimal already on PATH for actions/checkout.
-          nix-env -iA nixpkgs.gcc nixpkgs.gnumake
-
       - name: Install dependencies (CaramOS)
         if: matrix.name == 'CaramOS'
         run: |
@@ -149,7 +137,7 @@ jobs:
         if: matrix.name == 'Gentoo'
         run: |
           emerge-webrsync
-          emerge --getbinpkg sys-devel/gcc sys-devel/make dev-vcs/git
+          emerge --getbinpkg sys-devel/gcc dev-build/make dev-vcs/git
 
       - name: Install dependencies (Rocky Linux)
         if: matrix.name == 'Rocky Linux'
@@ -191,6 +179,48 @@ jobs:
 
       - name: make uninstall (cleanup)
         run: make uninstall
+
+  # ------------------------------------------------------------------
+  # NixOS — not run as a `container:` job. Pure Nix-store images
+  # (nixos/nix, etc.) have no FHS layout (no /lib64/ld-linux-x86-64.so.2
+  # and friends), and GitHub Actions injects its own prebuilt Node.js
+  # binary into container jobs to run "uses:" steps and post-job cleanup.
+  # That Node binary can't find a dynamic loader on a pure-Nix rootfs, so
+  # every containerized action step (including internal cleanup) fails
+  # with "no such file or directory" even though the file exists. Instead,
+  # install Nix on the normal (FHS-compatible) ubuntu-latest runner and use
+  # nix-shell just to provide gcc/make for the build.
+  # ------------------------------------------------------------------
+  test-nixos:
+    name: Test on NixOS (via Nix package manager)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build nexfetch
+        run: |
+          nix-shell -p gcc gnumake --run '
+            make clean || true
+            make -j"$(nproc)"
+          '
+
+      - name: Verify the binary was produced
+        run: |
+          test -f ./nexfetch
+          ls -lh ./nexfetch
+
+      - name: Run ./nexfetch
+        run: ./nexfetch
+
+      - name: Run ./nexfetch --no-logo (doesn't require chafa)
+        run: ./nexfetch --no-logo
+
+      - name: Run ./nexfetch --list-modules
+        run: ./nexfetch --list-modules
 
   # ------------------------------------------------------------------
   # Windows — native runner, built via MSYS2/MinGW64 toolchain
