@@ -150,10 +150,14 @@ jobs:
 
       - name: Manually sign Release file with gpg
         run: |
+          echo "Listing imported secret keys for debug:"
+          gpg --list-secret-keys
           cd apt-repo/dists/stable
-          gpg --batch --yes --default-key 33F527C35036B510FFD10A1078517E50002AC314 \
+          gpg --batch --yes --pinentry-mode loopback --passphrase '' \
+            --default-key 33F527C35036B510FFD10A1078517E50002AC314 \
             --armor --detach-sign -o Release.gpg Release
-          gpg --batch --yes --default-key 33F527C35036B510FFD10A1078517E50002AC314 \
+          gpg --batch --yes --pinentry-mode loopback --passphrase '' \
+            --default-key 33F527C35036B510FFD10A1078517E50002AC314 \
             --armor --clearsign -o InRelease Release
 
       - name: Commit and push to central apt-repo
