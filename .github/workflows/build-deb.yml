@@ -3,11 +3,12 @@ name: Build & Publish .deb Package
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-deb:
@@ -40,7 +41,9 @@ jobs:
             gcc \
             make \
             crossbuild-essential-arm64 \
-            libc6:arm64
+            libc6:arm64 \
+            reprepro \
+            gnupg
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -81,62 +84,22 @@ jobs:
           path: dist/*.deb
           if-no-files-found: warn
 
-      - name: Include config, logos, and plugins alongside the .deb
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          mkdir -p dist/config dist/logos dist/plugins
-          cp -r config/* dist/config/
-          cp -r logos/* dist/logos/
-          cp plugins/*.so dist/plugins/ 2>/dev/null || true
-          cp plugins/*.dll dist/plugins/ 2>/dev/null || true
-          cp config/config.json dist/config.json
-
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.deb
-            dist/config.json
-            dist/config/*
-            dist/logos/*
-            dist/plugins/*
+          files: dist/*.deb
           draft: false
           prerelease: false
           generate_release_notes: true
 
   publish-apt-repo:
-    name: Publish APT Repository to GitHub Pages
+    name: Publish to central Hyggshi APT repository
     needs: build-deb
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Checkout source (gh-pages)
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-        continue-on-error: true
-
-      - name: Initialize gh-pages if needed
-        run: |
-          if [ ! -d gh-pages/.git ]; then
-            rm -rf gh-pages
-            mkdir -p gh-pages
-            cd gh-pages
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            echo "# nexfetch APT Repository" > README.md
-            git add .
-            git commit -m "Initial gh-pages branch"
-            git branch -M gh-pages
-            git remote add origin "https://github.com/${{ github.repository }}.git"
-            git push -u origin gh-pages
-            cd ..
-          fi
-
       - name: Download all .deb artifacts
         uses: actions/download-artifact@v4
         with:
@@ -147,44 +110,39 @@ jobs:
       - name: Install apt-repo tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils gnupg
+          sudo apt-get install -y reprepro gnupg
 
-      - name: Generate GPG key for apt repo signing
+      - name: Import fixed GPG signing key
         run: |
-          mkdir -p gh-pages/apt
-          printf '%s\n' '%echo Generating nexfetch apt repository signing key' 'Key-Type: RSA' 'Key-Length: 4096' 'Key-Usage: sign' 'Name-Real: nexfetch APT Repository' 'Name-Email: contact@hyggshi.os' 'Expire-Date: 0' '%no-protection' '%commit' '%echo done' > /tmp/gpg-batch
-          gpg --batch --gen-key /tmp/gpg-batch
-          gpg --armor --export contact@hyggshi.os > gh-pages/apt/repo-key.gpg
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --reload gpg-agent
 
-      - name: Build APT repository
-        run: |
-          mkdir -p gh-pages/apt/pool/main/n/nexfetch
-          mkdir -p gh-pages/apt/dists/stable/main/binary-amd64
-          mkdir -p gh-pages/apt/dists/stable/main/binary-arm64
-          cp debs/*.deb gh-pages/apt/pool/main/n/nexfetch/ 2>/dev/null || true
-          cd gh-pages/apt
-          dpkg-scanpackages --arch amd64 pool/main /dev/null > dists/stable/main/binary-amd64/Packages
-          gzip -kf dists/stable/main/binary-amd64/Packages
-          dpkg-scanpackages --arch arm64 pool/main /dev/null > dists/stable/main/binary-arm64/Packages
-          gzip -kf dists/stable/main/binary-arm64/Packages
-          DATE_STR=$(date -Ru)
-          printf 'Origin: nexfetch\nLabel: nexfetch APT Repository\nSuite: stable\nCodename: stable\nArchitectures: amd64 arm64\nComponents: main\nDescription: APT repository for nexfetch\nDate: %s\n' "$DATE_STR" > dists/stable/Release
-          gpg --armor --detach-sign --yes -o dists/stable/Release.gpg dists/stable/Release
-          gpg --armor --clearsign --yes -o dists/stable/InRelease dists/stable/Release
-          cd ../..
-
-      - name: Create apt repository index page
-        run: |
-          mkdir -p gh-pages/apt
-          printf '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8">\n  <title>nexfetch APT Repository</title>\n</head>\n<body>\n  <h1>nexfetch APT Repository</h1>\n  <p>APT repository for nexfetch.</p>\n  <h2>Quick Install</h2>\n  <pre><code>curl -sL https://raw.githubusercontent.com/Hyggshi-OS-Foundation/nexfetch/main/scripts/nexfetch-apt-setup.sh | sudo bash</code></pre>\n</body>\n</html>\n' > gh-pages/apt/index.html
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Checkout central apt-repo (gh-pages)
+        uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gh-pages
-          publish_branch: gh-pages
-          keep_files: true
-          user_name: "github-actions[bot]"
-          user_email: "github-actions[bot]@users.noreply.github.com"
-          commit_message: "Update APT repository"
+          repository: Hyggshi-OS-Foundation/apt-repo
+          ref: gh-pages
+          token: ${{ secrets.APT_REPO_TOKEN }}
+          path: apt-repo
+
+      - name: Include all .deb into central repo
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd apt-repo
+          for deb in ../debs/*.deb; do
+            reprepro --ignore=wrongdistribution \
+              --gpg-options "--batch --pinentry-mode loopback --passphrase ${GPG_PASSPHRASE}" \
+              includedeb stable "$deb"
+          done
+
+      - name: Commit and push to central apt-repo
+        run: |
+          cd apt-repo
+          git config user.name "Hyggshi CI Bot"
+          git config user.email "ci@hyggshi.os"
+          git add dists pool
+          git diff --cached --quiet && echo "No changes to commit" || \
+            (git commit -m "Publish nexfetch ${{ github.ref_name }} via CI" && git push origin gh-pages)

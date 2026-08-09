@@ -1,0 +1,75 @@
+name: Build and Publish to APT Repo
+
+on:
+  push:
+    tags:
+      - 'v*'  # chạy khi push tag dạng v1.0.0, v1.0.1...
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout nexfetch source
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build nexfetch binary
+        run: |
+          make
+          # đổi lệnh này nếu build system khác (cmake, meson...)
+
+      - name: Create .deb package structure
+        run: |
+          mkdir -p pkg/DEBIAN pkg/usr/bin
+          cp nexfetch pkg/usr/bin/
+          chmod 755 pkg/usr/bin/nexfetch
+          cat > pkg/DEBIAN/control << EOF
+          Package: nexfetch
+          Version: ${{ steps.version.outputs.version }}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Hyggshi OS Foundation <tfhy5321@gmail.com>
+          Description: A fast neofetch-style system info tool
+           nexfetch is a lightweight, high-performance system information
+           fetcher written in C, roughly 3x faster than fastfetch.
+          EOF
+
+      - name: Build .deb
+        run: |
+          dpkg-deb --root-owner-group --build pkg nexfetch_${{ steps.version.outputs.version }}_amd64.deb
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+      - name: Checkout apt-repo (gh-pages)
+        uses: actions/checkout@v4
+        with:
+          repository: Hyggshi-OS-Foundation/apt-repo
+          ref: gh-pages
+          token: ${{ secrets.APT_REPO_TOKEN }}
+          path: apt-repo
+
+      - name: Include package into repo
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd apt-repo
+          reprepro --ask-passphrase includedeb stable ../nexfetch_${{ steps.version.outputs.version }}_amd64.deb <<< "$GPG_PASSPHRASE"
+
+      - name: Commit and push to apt-repo
+        run: |
+          cd apt-repo
+          git config user.name "Hyggshi CI Bot"
+          git config user.email "ci@hyggshi.os"
+          git add dists pool
+          git commit -m "Publish nexfetch ${{ steps.version.outputs.version }} via CI"
+          git push origin gh-pages
