@@ -127,17 +127,6 @@ jobs:
           token: ${{ secrets.APT_REPO_TOKEN }}
           path: apt-repo
 
-      - name: Include all .deb into central repo
-        env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          cd apt-repo
-          for deb in ../debs/*.deb; do
-            reprepro --ignore=wrongdistribution \
-              --gpg-options "--batch --pinentry-mode loopback --passphrase ${GPG_PASSPHRASE}" \
-              includedeb stable "$deb"
-          done
-
       - name: Commit and push to central apt-repo
         run: |
           cd apt-repo
