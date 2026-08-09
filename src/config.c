@@ -141,36 +141,32 @@ void config_init(void) {
         util_mkdir_p(user_dir);
         util_mkdir_p(user_mod_dir);
 
-        /* Auto-initialize user config.json if missing */
+        /* Auto-generate config.json on first run only */
         FILE *chk = fopen(user_cfg, "r");
         if (chk) {
             fclose(chk);
         } else {
-            /* Try copying system or local default config */
-            if (util_copy_file("config/config.json", user_cfg) != 0) {
-                if (util_copy_file("/etc/nexfetch/config.json", user_cfg) != 0) {
-                    if (util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) != 0) {
-                        /* Fall back to writing default template */
-                        FILE *fw = fopen(user_cfg, "w");
-                        if (fw) {
-                            fputs("{\n"
-                                  "  \"show_logo\": true,\n"
-                                  "  \"color_blocks\": true,\n"
-                                  "  \"theme\": \"boxed\",\n"
-                                  "  \"logo\": \"\",\n"
-                                  "  \"logo_width\": 32,\n"
-                                  "  \"background_image\": \"\",\n"
-                                  "  \"plugins\": [],\n"
-                                  "  \"modules\": [\n"
-                                  "    \"os\", \"kernel\", \"host\", \"uptime\", \"packages\", \"display\",\n"
-                                  "    \"shell\", \"de\", \"wm\", \"terminal\", \"cpu\", \"gpu\",\n"
-                                  "    \"memory\", \"disk\", \"swap\", \"battery\", \"network\",\n"
-                                  "    \"theme\", \"icons\", \"font\", \"locale\"\n"
-                                  "  ]\n"
-                                  "}\n", fw);
-                            fclose(fw);
-                        }
-                    }
+            if (util_copy_file("config/config.json", user_cfg) != 0 &&
+                util_copy_file("/etc/nexfetch/config.json", user_cfg) != 0 &&
+                util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) != 0) {
+                FILE *fw = fopen(user_cfg, "w");
+                if (fw) {
+                    fputs("{\n"
+                          "  \"show_logo\": true,\n"
+                          "  \"color_blocks\": true,\n"
+                          "  \"theme\": \"boxed\",\n"
+                          "  \"logo\": \"\",\n"
+                          "  \"logo_width\": 32,\n"
+                          "  \"background_image\": \"\",\n"
+                          "  \"plugins\": [],\n"
+                          "  \"modules\": [\n"
+                          "    \"os\", \"kernel\", \"host\", \"uptime\", \"packages\", \"display\",\n"
+                          "    \"shell\", \"de\", \"wm\", \"terminal\", \"cpu\", \"gpu\",\n"
+                          "    \"memory\", \"disk\", \"swap\", \"battery\", \"network\",\n"
+                          "    \"theme\", \"icons\", \"font\", \"locale\"\n"
+                          "  ]\n"
+                          "}\n", fw);
+                    fclose(fw);
                 }
             }
         }

@@ -610,7 +610,9 @@ Measured on the same machine, each tool run repeatedly and timed. Lower is bette
 
 <img src="Resources/benchmark_bar.png"/>
 
-nexfetch comes out around 5x faster than fastfetch and roughly 70-200x faster than neofetch in both configurations. `nexfetch-ghvbb` here refers to [ghvbb/NexFetch](https://github.com/ghvbb/NexFetch), an unrelated project with a similar name, included for reference since people sometimes confuse the two.
+> --fast disables optional rendering and non-essential processing (such as image rendering, animations, and other expensive features) to minimize startup time.
+
+On the benchmark environment above, nexfetch completed about 5× faster than Fastfetch and about 70× faster than Neofetch in the default configuration.
 
 ## License
 
