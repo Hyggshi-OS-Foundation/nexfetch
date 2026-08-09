@@ -5,7 +5,7 @@
 #include "platform.h"
 #include "util.h"
 
-#define NEXFETCH_VERSION "1.1.1"
+#define NEXFETCH_VERSION "1.1.2"
 #define MAX_MODULES 48
 #define MAX_PLUGINS 16
 #define MAX_VAL_LEN 512
