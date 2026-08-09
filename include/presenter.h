@@ -4,10 +4,11 @@
 #include "nexfetch.h"
 #include <stddef.h>
 
-typedef struct ModuleResult {
-    const char *key;
-    const char *val;
-} ModuleResult;
+/* ModuleResult is already defined by nexfetch.h (included above) —
+ * redefining it here caused "redefinition of struct ModuleResult" build
+ * failures, since two different headers each defining the same struct
+ * isn't protected by include guards (those only stop the same file from
+ * being included twice). */
 
 typedef struct Presenter {
     const char *name;         // e.g. "boxed", "classic", "modern", "compact"

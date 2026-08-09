@@ -43,11 +43,6 @@ static double median(double *values, int count) {
     return values[count / 2];
 }
 
-static double median3(double a, double b, double c) {
-    double vals[3] = {a, b, c};
-    return median(vals, 3);
-}
-
 void benchmark_run(int iterations, BenchmarkResult *result) {
     if (!result) return;
     if (iterations < 3) iterations = 3;
