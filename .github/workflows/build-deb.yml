@@ -51,7 +51,7 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           dch --newversion "${VERSION}-1" --distribution unstable \
-            "Release version ${VERSION}" || true
+            "Release version ${VERSION}"
 
       - name: Build for amd64
         if: matrix.arch == 'amd64'
@@ -115,8 +115,6 @@ jobs:
       - name: Import fixed GPG signing key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           gpgconf --reload gpg-agent
 
       - name: Checkout central apt-repo (gh-pages)
@@ -126,6 +124,20 @@ jobs:
           ref: gh-pages
           token: ${{ secrets.APT_REPO_TOKEN }}
           path: apt-repo
+
+      - name: Include all .deb into central repo
+        run: |
+          cd apt-repo
+          shopt -s nullglob
+          debs=(../debs/*.deb)
+          if [ ${#debs[@]} -eq 0 ]; then
+            echo "No .deb files found to publish!"
+            exit 1
+          fi
+          for deb in "${debs[@]}"; do
+            echo "Including $deb ..."
+            reprepro includedeb stable "$deb"
+          done
 
       - name: Commit and push to central apt-repo
         run: |
