@@ -38,6 +38,7 @@
 - Cấu hình qua file JSON hoặc cờ dòng lệnh
 - Nạp module `.so`/`.dll` tùy chỉnh lúc chạy
 - Viết bằng C thuần, ít phụ thuộc
+- Chế độ kiểm tra bảo mật (`--security`, chỉ Linux) kiểm tra Secure Boot, kernel lockdown, firewall, MAC (SELinux/AppArmor), ASLR, chính sách core dump, và các cổng đang lắng nghe có thể truy cập từ bên ngoài
 
 ## Cài đặt
 
@@ -170,6 +171,7 @@ nexfetch [options]
 | `--logo <path>` | Dùng file logo tùy chỉnh (`.txt` hoặc ảnh) |
 | `--theme <name>` | Chọn kiểu hiển thị: `boxed`, `classic`, `modern` |
 | `--list-modules` | Liệt kê các module đã đăng ký |
+| `--security` | Chạy kiểm tra bảo mật độc lập rồi thoát (chỉ Linux, xem [Kiểm tra bảo mật](#kiểm-tra-bảo-mật)) |
 
 ### Ví dụ
 
@@ -188,7 +190,42 @@ nexfetch [options]
 
 # Xem hết các module có sẵn
 ./nexfetch --list-modules
+
+# Chạy kiểm tra bảo mật
+./nexfetch --security
 ```
+
+## Kiểm tra bảo mật
+
+`--security` chạy kiểm tra bảo mật riêng cho Linux, in ra bảng có tính điểm thay vì thông tin hệ thống thông thường:
+
+```
+Nexfetch Security Audit
+
+  ✓ Secure Boot       Enabled
+  ✓ Kernel Lockdown   Enabled
+  ✓ Firewall          Active
+  ✓ MAC               Active
+  ✓ ASLR              Enabled
+  ⚠ Core Dumps        Enabled (piped)
+  ⚠ Open Ports        2
+
+  Security Score: 5/7
+```
+
+| Mục kiểm tra | Đọc từ đâu | Ghi chú |
+| --- | --- | --- |
+| Secure Boot | `/sys/firmware/efi/efivars/SecureBoot-...` | Báo "Not found" trên máy không dùng UEFI |
+| Kernel Lockdown | `/sys/kernel/security/lockdown` | Bật khi ở chế độ `[integrity]` hoặc `[confidentiality]` |
+| Firewall | `systemctl is-active` cho ufw/firewalld/iptables/nftables, sau đó đếm rule nếu chạy root | Báo "Unknown" thay vì đoán bừa nếu không đủ quyền kiểm tra |
+| MAC | `/sys/fs/selinux/enforce`, `/sys/module/apparmor/parameters/enabled` | Dùng cờ kernel ai cũng đọc được, không dùng danh sách profile chỉ root mới đọc, nên chạy không cần `sudo` |
+| ASLR | `/proc/sys/kernel/randomize_va_space` | 2 = đầy đủ, 1 = một phần, 0 = tắt |
+| Core Dumps | `/proc/sys/kernel/core_pattern` | Core dump dạng piped/enabled chỉ là cảnh báo, không phải lỗi |
+| Open Ports | `/proc/net/tcp` + `/proc/net/udp`, đã lọc bỏ dải `127.0.0.0/8` | Chỉ đếm socket có thể truy cập từ bên ngoài máy; các service chỉ bind loopback (DNS stub resolver, database nội bộ...) không được tính |
+
+Một vài mục (chủ yếu Firewall và danh sách profile SELinux/AppArmor) sẽ chính xác hơn khi chạy `sudo ./nexfetch --security`, vì đếm rule và đọc profile trực tiếp cần quyền root. Các mục còn lại hoạt động giống nhau dù có sudo hay không.
+
+Hiện tại tính năng bảo mật chỉ hỗ trợ Linux; macOS và Windows có thể được bổ sung sau.
 
 ## Cấu hình
 

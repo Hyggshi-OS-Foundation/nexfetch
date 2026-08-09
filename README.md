@@ -38,6 +38,7 @@
 - Configured through a JSON file or command-line flags
 - Loads `.so`/`.dll` modules at runtime
 - Written in C, few dependencies
+- Security audit mode (`--security`, Linux only) checks Secure Boot, kernel lockdown, firewall, MAC (SELinux/AppArmor), ASLR, core dump policy, and externally reachable listening ports
 
 ## Installation
 
@@ -170,6 +171,7 @@ nexfetch [options]
 | `--logo <path>` | Use a custom logo file (`.txt` or image) |
 | `--theme <name>` | Set display style: `boxed`, `classic`, or `modern` |
 | `--list-modules` | List all registered modules |
+| `--security` | Run a standalone security audit and exit (Linux only, see [Security Audit](#security-audit)) |
 
 ### Examples
 
@@ -188,7 +190,42 @@ nexfetch [options]
 
 # See every available module
 ./nexfetch --list-modules
+
+# Run the security audit
+./nexfetch --security
 ```
+
+## Security Audit
+
+`--security` runs a standalone Linux security check and prints a scored table instead of the normal system-info output:
+
+```
+Nexfetch Security Audit
+
+  ✓ Secure Boot       Enabled
+  ✓ Kernel Lockdown   Enabled
+  ✓ Firewall          Active
+  ✓ MAC               Active
+  ✓ ASLR              Enabled
+  ⚠ Core Dumps        Enabled (piped)
+  ⚠ Open Ports        2
+
+  Security Score: 5/7
+```
+
+| Check | What it reads | Notes |
+| --- | --- | --- |
+| Secure Boot | `/sys/firmware/efi/efivars/SecureBoot-...` | Reports "Not found" on non-UEFI systems |
+| Kernel Lockdown | `/sys/kernel/security/lockdown` | Enabled when in `[integrity]` or `[confidentiality]` mode |
+| Firewall | `systemctl is-active` for ufw/firewalld/iptables/nftables, then rule counts as root | Reports "Unknown" instead of guessing if it can't check without root |
+| MAC | `/sys/fs/selinux/enforce`, `/sys/module/apparmor/parameters/enabled` | Uses the world-readable kernel enablement flag, not the root-only profile list, so it works without `sudo` |
+| ASLR | `/proc/sys/kernel/randomize_va_space` | 2 = full, 1 = partial, 0 = disabled |
+| Core Dumps | `/proc/sys/kernel/core_pattern` | Flags piped/enabled core dumps as a caution, not a failure |
+| Open Ports | `/proc/net/tcp` + `/proc/net/udp`, filtered to non-`127.0.0.0/8` | Only counts sockets reachable from outside the machine; loopback-only services (DNS stub resolvers, local databases, etc.) are excluded |
+
+A few checks (mainly Firewall and the SELinux/AppArmor profile enumeration) are more accurate with `sudo ./nexfetch --security`, since reading rule counts and loaded profiles directly requires root. Everything else works identically with or without elevated privileges.
+
+Security is currently Linux-only; macOS and Windows support may be added later.
 
 ## Configuration
 

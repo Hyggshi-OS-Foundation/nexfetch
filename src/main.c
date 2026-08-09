@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "util.h"
 #include "presenter.h"
+#include "benchmark.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,6 +52,17 @@ extern void module_detect_font(char *out, size_t max_len);
 extern void module_detect_locale(char *out, size_t max_len);
 extern void module_detect_swap(char *out, size_t max_len);
 extern void module_detect_display(char *out, size_t max_len);
+
+/* Feature module detectors */
+extern void module_detect_security(char *out, size_t max_len);
+
+/* Benchmark */
+extern void benchmark_run(int iterations, BenchmarkResult *result);
+extern void benchmark_print(const BenchmarkResult *result);
+extern void benchmark_compare_run(void);
+
+/* Explain */
+extern void explain_generate(const ModuleResult *results, int count, char *out, size_t max_len);
 
 #ifndef _WIN32
 typedef struct {
@@ -106,7 +118,8 @@ static int module_is_slow(const char *key) {
         strcmp(key, "theme")    == 0 ||
         strcmp(key, "icons")    == 0 ||
         strcmp(key, "font")     == 0 ||
-        strcmp(key, "display")  == 0
+        strcmp(key, "display")  == 0 ||
+        strcmp(key, "security") == 0
     );
 }
 
@@ -324,6 +337,27 @@ int main(int argc, char *argv[]) {
             g_config.fast_mode = 1;
             g_config.logo_animate = 0;
         }
+        if (strcmp(argv[i], "--benchmark") == 0) {
+            g_config.benchmark_mode = 1;
+        }
+        if (strcmp(argv[i], "--compare") == 0) {
+            g_config.compare_mode = 1;
+        }
+        if (strcmp(argv[i], "--security") == 0) {
+            g_config.security_mode = 1;
+        }
+        if (strcmp(argv[i], "--packages") == 0) {
+            g_config.packages_mode = 1;
+        }
+        if (strcmp(argv[i], "--explain") == 0) {
+            g_config.explain_mode = 1;
+        }
+        if (strcmp(argv[i], "--minimal") == 0) {
+            g_config.output_mode = OUTPUT_MODE_MINIMAL;
+        }
+        if (strcmp(argv[i], "--full") == 0) {
+            g_config.output_mode = OUTPUT_MODE_FULL;
+        }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("nexfetch - Modern Modular System Fetch CLI\n");
             printf("Usage: nexfetch [options]\n\n");
@@ -340,8 +374,35 @@ int main(int argc, char *argv[]) {
             printf("  --no-bg                        Disable background image\n");
             printf("  --theme <name>                 Set theme (boxed, classic, modern)\n");
             printf("  --list-modules                 List all registered modules\n");
+            printf("  --benchmark                    Run internal benchmark and exit\n");
+            printf("  --compare                      Compare mode (reserved)\n");
+            printf("  --security                     Enable security module\n");
+            printf("  --packages                     Show detailed package intelligence\n");
+            printf("  --explain                      Add analytical explanations\n");
+            printf("  --minimal                      Minimal output (core modules only)\n");
+            printf("  --full                         Full output (all modules)\n");
             return 0;
         }
+    }
+
+    /* Handle benchmark mode: run benchmark and exit */
+    if (g_config.benchmark_mode) {
+        BenchmarkResult result;
+        benchmark_run(5, &result);
+        benchmark_print(&result);
+        return 0;
+    }
+
+    /* Handle compare mode: show compare message and exit */
+    if (g_config.compare_mode) {
+        benchmark_compare_run();
+        return 0;
+    }
+
+    /* Handle security audit mode: run audit and exit */
+    if (g_config.security_mode) {
+        platform_security_audit();
+        return 0;
     }
 
     module_manager_init();
@@ -370,6 +431,8 @@ int main(int argc, char *argv[]) {
     module_manager_register("Icons",    "icons",    module_detect_icons);
     module_manager_register("Font",     "font",     module_detect_font);
     module_manager_register("Locale",   "locale",   module_detect_locale);
+
+    /* Security module - now handled as standalone audit mode via --security */
 
     /* Load dynamic plugins listed in config.json "plugins" array */
     if (!g_config.fast_mode) {
@@ -458,6 +521,18 @@ int main(int argc, char *argv[]) {
 
         if (g_config.fast_mode && module_is_slow(m->key)) continue;
 
+        /* Output mode filtering */
+        if (g_config.output_mode == OUTPUT_MODE_MINIMAL) {
+            /* Minimal mode: only show OS, kernel, CPU, memory */
+            if (strcmp(m->key, "os") != 0 && strcmp(m->key, "kernel") != 0 &&
+                strcmp(m->key, "cpu") != 0 && strcmp(m->key, "memory") != 0) {
+                continue;
+            }
+        } else if (g_config.output_mode == OUTPUT_MODE_FULL) {
+            /* Full mode: show everything including security if enabled */
+            /* Security is already registered if --security flag was used */
+        }
+
         active_indices[active_count++] = i;
     }
 
@@ -522,6 +597,13 @@ int main(int argc, char *argv[]) {
             snprintf(val_buffers[idx], MAX_VAL_LEN, "%s", os_val);
             continue;
         }
+
+        /* Package intelligence mode: use extended detection */
+        if (m && strcmp(m->key, "packages") == 0 && g_config.packages_mode) {
+            platform_get_packages_intel(val_buffers[idx], MAX_VAL_LEN);
+            continue;
+        }
+
         if (m && m->detect) {
             m->detect(val_buffers[idx], MAX_VAL_LEN);
         }
@@ -608,6 +690,15 @@ int main(int argc, char *argv[]) {
     presenter_render(logo_lines, logo_count, max_logo_width,
                      results, result_count,
                      user_host, sep);
+
+    /* Explain mode: add analytical commentary after standard output */
+    if (g_config.explain_mode && result_count > 0) {
+        char explain_buf[4096] = "";
+        explain_generate(results, result_count, explain_buf, sizeof(explain_buf));
+        if (explain_buf[0] != '\0') {
+            printf("%s", explain_buf);
+        }
+    }
 
 #ifndef _WIN32
     /* --- Animated GIF logo ---------------------------------------------------

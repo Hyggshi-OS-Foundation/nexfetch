@@ -38,4 +38,11 @@ void platform_get_locale(char *out, size_t size);
 void platform_get_swap(char *out, size_t size);
 void platform_get_display(char *out, size_t size);
 
+/* Security module */
+void platform_get_security(char *out, size_t size);
+void platform_security_audit(void);
+
+/* Package intelligence */
+void platform_get_packages_intel(char *out, size_t size);
+
 #endif /* PLATFORM_H */

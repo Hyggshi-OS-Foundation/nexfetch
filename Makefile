@@ -48,7 +48,8 @@ else
                        platform/linux/network.c \
                        platform/linux/locale.c \
                        platform/linux/swap.c \
-                       platform/linux/display.c
+                       platform/linux/display.c \
+                       platform/linux/security.c
         RDYNAMIC_FLAGS = -rdynamic
     endif
 endif
@@ -94,6 +95,9 @@ SRC = src/main.c \
       modules/locale.c \
       modules/swap.c \
       modules/display.c \
+      modules/benchmark.c \
+      modules/security.c \
+      modules/explain.c \
       $(PLATFORM_SRC)
 
 OBJ = $(SRC:.c=.o)

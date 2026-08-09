@@ -38,6 +38,7 @@
 - 用 JSON 文件或命令行参数配置
 - 运行时可以加载 `.so`/`.dll` 插件
 - 用 C 写的,依赖很少
+- 安全审计模式(`--security`,仅限 Linux)检查 Secure Boot、内核锁定、防火墙、MAC(SELinux/AppArmor)、ASLR、core dump 策略,以及可从外部访问的监听端口
 
 ## 安装
 
@@ -170,6 +171,7 @@ nexfetch [options]
 | `--logo <path>` | 使用自定义 logo 文件(`.txt` 或图片) |
 | `--theme <name>` | 设置显示样式:`boxed`、`classic`、`modern` |
 | `--list-modules` | 列出所有已注册的模块 |
+| `--security` | 运行一次独立的安全审计后退出(仅限 Linux,见[安全审计](#安全审计)) |
 
 ### 例子
 
@@ -188,7 +190,42 @@ nexfetch [options]
 
 # 查看所有可用模块
 ./nexfetch --list-modules
+
+# 运行安全审计
+./nexfetch --security
 ```
+
+## 安全审计
+
+`--security` 会运行一次独立的 Linux 安全检查,输出一个带评分的表格,而不是常规的系统信息:
+
+```
+Nexfetch Security Audit
+
+  ✓ Secure Boot       Enabled
+  ✓ Kernel Lockdown   Enabled
+  ✓ Firewall          Active
+  ✓ MAC               Active
+  ✓ ASLR              Enabled
+  ⚠ Core Dumps        Enabled (piped)
+  ⚠ Open Ports        2
+
+  Security Score: 5/7
+```
+
+| 检查项 | 读取来源 | 说明 |
+| --- | --- | --- |
+| Secure Boot | `/sys/firmware/efi/efivars/SecureBoot-...` | 非 UEFI 系统会显示 "Not found" |
+| Kernel Lockdown | `/sys/kernel/security/lockdown` | 处于 `[integrity]` 或 `[confidentiality]` 模式时判定为开启 |
+| Firewall | 依次用 `systemctl is-active` 检查 ufw/firewalld/iptables/nftables,以 root 运行时再统计规则数 | 如果没有权限判断,会显示 "Unknown",而不是瞎猜 |
+| MAC | `/sys/fs/selinux/enforce`、`/sys/module/apparmor/parameters/enabled` | 使用所有用户都能读取的内核启用标志,而不是只有 root 能读的 profile 列表,所以不需要 `sudo` 也能正常工作 |
+| ASLR | `/proc/sys/kernel/randomize_va_space` | 2 = 完全开启,1 = 部分开启,0 = 关闭 |
+| Core Dumps | `/proc/sys/kernel/core_pattern` | piped/enabled 状态的 core dump 只作为提醒,不算失败项 |
+| Open Ports | `/proc/net/tcp` + `/proc/net/udp`,过滤掉 `127.0.0.0/8` 网段 | 只统计能从机器外部访问的端口;仅绑定 loopback 的服务(DNS 存根解析器、本地数据库等)不计入 |
+
+部分检查项(主要是 Firewall 以及 SELinux/AppArmor 的 profile 枚举)在 `sudo ./nexfetch --security` 下会更准确,因为统计规则数和读取已加载的 profile 需要 root 权限。其余检查项无论是否提权,结果都是一样的。
+
+安全审计目前仅支持 Linux;macOS 和 Windows 支持可能会在后续加入。
 
 ## 配置
 

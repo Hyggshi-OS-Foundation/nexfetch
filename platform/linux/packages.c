@@ -159,4 +159,84 @@ void platform_get_packages(char *out, size_t size) {
     if (strcmp(out, "Unknown") != 0) util_cache_write("packages", out);
 }
 
+/* --- Package Intelligence --- */
+
+/* Count upgradable packages (APT-specific) */
+static int count_upgradable_apt(void) {
+    char buf[64] = "";
+    if (util_execute_cmd("apt list --upgradable 2>/dev/null | grep -c upgradable", buf, sizeof(buf)) == 0) {
+        return atoi(buf);
+    }
+    return 0;
+}
+
+/* Count held packages (APT-specific) */
+static int count_held_apt(void) {
+    char buf[64] = "";
+    if (util_execute_cmd("dpkg --get-selections 2>/dev/null | grep -c hold", buf, sizeof(buf)) == 0) {
+        return atoi(buf);
+    }
+    return 0;
+}
+
+/* Count broken packages */
+static int count_broken_packages(void) {
+    char buf[64] = "";
+    if (util_execute_cmd("dpkg -l 2>/dev/null | grep -c '^..r'", buf, sizeof(buf)) == 0) {
+        return atoi(buf);
+    }
+    return 0;
+}
+
+void platform_get_packages_intel(char *out, size_t size) {
+    if (!out || size == 0) return;
+
+    int total = 0;
+    int upgradable = 0;
+    int held = 0;
+    int broken = 0;
+    int security_updates = 0;
+
+    /* Get total from existing cache or count */
+    char total_buf[256] = "";
+    if (util_cache_read("packages", total_buf, sizeof(total_buf))) {
+        total = atoi(total_buf);
+    } else {
+        /* Count from dpkg if available */
+        if (path_exists("/var/lib/dpkg/status")) {
+            total = count_dpkg_packages();
+        }
+    }
+
+    /* APT-specific counts (cached separately with 60s TTL) */
+    if (path_exists("/var/lib/dpkg/status")) {
+        char cached[128] = "";
+        if (util_cache_read("packages_intel", cached, sizeof(cached))) {
+            sscanf(cached, "%d %d %d %d", &upgradable, &held, &broken, &security_updates);
+        } else {
+            upgradable = count_upgradable_apt();
+            held = count_held_apt();
+            broken = count_broken_packages();
+            /* Security updates - check for security repo updates */
+            char sec_buf[64] = "";
+            if (util_execute_cmd("apt list --upgradable 2>/dev/null | grep -c security", sec_buf, sizeof(sec_buf)) == 0) {
+                security_updates = atoi(sec_buf);
+            }
+            snprintf(cached, sizeof(cached), "%d %d %d %d", upgradable, held, broken, security_updates);
+            util_cache_write("packages_intel", cached);
+        }
+    }
+
+    int pos = 0;
+    pos += snprintf(out + pos, size - pos, "Installed %d", total);
+    if (upgradable > 0)
+        pos += snprintf(out + pos, size - pos, "\nUpgradable %d", upgradable);
+    if (held > 0)
+        pos += snprintf(out + pos, size - pos, "\nHeld %d", held);
+    if (broken > 0)
+        pos += snprintf(out + pos, size - pos, "\nBroken %d", broken);
+    if (security_updates > 0)
+        pos += snprintf(out + pos, size - pos, "\nSecurity updates %d", security_updates);
+}
+
 #endif

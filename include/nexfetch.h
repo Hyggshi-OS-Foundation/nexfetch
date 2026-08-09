@@ -5,13 +5,24 @@
 #include "platform.h"
 #include "util.h"
 
-#define NEXFETCH_VERSION "1.1.0"
+#define NEXFETCH_VERSION "1.1.1"
 #define MAX_MODULES 48
 #define MAX_PLUGINS 16
 #define MAX_VAL_LEN 512
 #define MAX_LOGO_LINES 32
 #define MAX_LOGO_LINE_LEN 2048   /* must fit full chafa-rendered lines (up to ~700 raw bytes) */
 #define LOGO_PADDING 1          /* gap columns between logo and info box */
+
+typedef enum OutputMode {
+    OUTPUT_MODE_NORMAL,  /* default */
+    OUTPUT_MODE_MINIMAL, /* --minimal: only core modules */
+    OUTPUT_MODE_FULL     /* --full: all modules including security */
+} OutputMode;
+
+typedef struct ModuleResult {
+    const char *key;
+    const char *val;
+} ModuleResult;
 
 typedef struct NexfetchConfig {
     int show_logo;
@@ -40,6 +51,14 @@ typedef struct NexfetchConfig {
 
     /* Set by --fast: skip slow modules/plugins and defer expensive work. */
     int  fast_mode;
+
+    /* New feature flags */
+    int  benchmark_mode;    /* --benchmark: run internal benchmark and exit */
+    int  compare_mode;      /* --compare: reserved for external tool comparison */
+    int  security_mode;     /* --security: enable security module */
+    int  packages_mode;     /* --packages: show detailed package intelligence */
+    int  explain_mode;      /* --explain: add analytical explanations */
+    OutputMode output_mode; /* --minimal, --full, or default NORMAL */
 } NexfetchConfig;
 
 extern NexfetchConfig g_config;
