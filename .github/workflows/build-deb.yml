@@ -114,6 +114,10 @@ jobs:
 
       - name: Import fixed GPG signing key
         run: |
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           gpgconf --reload gpg-agent
 
