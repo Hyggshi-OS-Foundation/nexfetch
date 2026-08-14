@@ -126,6 +126,47 @@ static void json_parse_modules_array(const char *json) {
     }
 }
 
+/*
+ * Canonical default configuration. This string is the single source of truth
+ * for what a fresh install looks like and stays byte-for-byte identical to
+ * config/config.json. It is written out on the very first run of nexfetch on a
+ * new machine, and is also parsed in-memory as a last resort so the program
+ * works correctly even when no HOME/XDG directory and no system install exist.
+ */
+static const char NEXFETCH_DEFAULT_CONFIG[] =
+"{\n"
+"  \"show_logo\": true,\n"
+"  \"color_blocks\": true,\n"
+"  \"theme\": \"classic\",\n"
+"  \"logo\": \"\",\n"
+"  \"logo_width\": 32,\n"
+"  \"background_image\": \"\",\n"
+"  \"plugins\": [],\n"
+"  \"modules\": [\n"
+"    \"os\",\n"
+"    \"kernel\",\n"
+"    \"host\",\n"
+"    \"uptime\",\n"
+"    \"packages\",\n"
+"    \"display\",\n"
+"    \"shell\",\n"
+"    \"de\",\n"
+"    \"wm\",\n"
+"    \"terminal\",\n"
+"    \"cpu\",\n"
+"    \"gpu\",\n"
+"    \"memory\",\n"
+"    \"disk\",\n"
+"    \"swap\",\n"
+"    \"battery\",\n"
+"    \"network\",\n"
+"    \"theme\",\n"
+"    \"icons\",\n"
+"    \"font\",\n"
+"    \"locale\"\n"
+"  ]\n"
+"}\n";
+
 void config_init(void) {
     char buf[8192] = "";
     char user_dir[512] = "";
@@ -146,27 +187,27 @@ void config_init(void) {
         if (chk) {
             fclose(chk);
         } else {
-            if (util_copy_file("config/config.json", user_cfg) != 0 &&
-                util_copy_file("/etc/nexfetch/config.json", user_cfg) != 0 &&
-                util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) != 0) {
+            int copied = 0;
+
+            /* 1. Running from the source tree / release folder, which ships a
+             *    canonical config.json next to the binary. */
+            if (util_copy_file("config/config.json", user_cfg) == 0) copied = 1;
+
+            /* 2. Installed via package: system-wide locations. */
+            if (!copied && util_copy_file("/etc/nexfetch/config.json", user_cfg) == 0)
+                copied = 1;
+            if (!copied && util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) == 0)
+                copied = 1;
+
+            /* 3. None of the above (freely downloaded binary placed anywhere):
+             *    write the bundled canonical default so the first run of a
+             *    fresh download is always fully configured. */
+            if (!copied) {
                 FILE *fw = fopen(user_cfg, "w");
                 if (fw) {
-                    fputs("{\n"
-                          "  \"show_logo\": true,\n"
-                          "  \"color_blocks\": true,\n"
-                          "  \"theme\": \"boxed\",\n"
-                          "  \"logo\": \"\",\n"
-                          "  \"logo_width\": 32,\n"
-                          "  \"background_image\": \"\",\n"
-                          "  \"plugins\": [],\n"
-                          "  \"modules\": [\n"
-                          "    \"os\", \"kernel\", \"host\", \"uptime\", \"packages\", \"display\",\n"
-                          "    \"shell\", \"de\", \"wm\", \"terminal\", \"cpu\", \"gpu\",\n"
-                          "    \"memory\", \"disk\", \"swap\", \"battery\", \"network\",\n"
-                          "    \"theme\", \"icons\", \"font\", \"locale\"\n"
-                          "  ]\n"
-                          "}\n", fw);
+                    fputs(NEXFETCH_DEFAULT_CONFIG, fw);
                     fclose(fw);
+                    copied = 1;
                 }
             }
         }
@@ -179,12 +220,20 @@ void config_init(void) {
 
     /* Fallback search order if user config couldn't be loaded */
     if (!loaded) {
-        if (!util_read_file_content("config/config.json", buf, sizeof(buf))) {
-            if (!util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
-                if (!util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf)))
-                    return;
-            }
+        if (util_read_file_content("config/config.json", buf, sizeof(buf))) {
+            loaded = 1;
+        } else if (util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
+            loaded = 1;
+        } else if (util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf))) {
+            loaded = 1;
         }
+    }
+
+    /* Brand-new, fully bare environment (no HOME/XDG, no system install):
+     * still parse the canonical default so first-run behavior is correct. */
+    if (!loaded) {
+        snprintf(buf, sizeof(buf), "%s", NEXFETCH_DEFAULT_CONFIG);
+        loaded = 1;
     }
 
     if (strstr(buf, "\"show_logo\": false") || strstr(buf, "\"show_logo\":false"))
