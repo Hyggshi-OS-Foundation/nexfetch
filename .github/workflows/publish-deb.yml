@@ -46,9 +46,16 @@ jobs:
 
       - name: Import GPG key
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          # Configure agent BEFORE it starts so options are honoured
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          # Restart agent to pick up new config
+          gpgconf --kill gpg-agent
+          gpgconf --launch gpg-agent
 
       - name: Install reprepro
         run: sudo apt-get install -y reprepro
@@ -65,10 +72,16 @@ jobs:
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          # Preset passphrase so reprepro can sign without interactive prompt
-          KEY_GRIP=$(gpg --with-keygrip --list-secret-keys --with-colons | awk -F: '/^grp/{print $10; exit}')
-          echo "$GPG_PASSPHRASE" | /usr/lib/gnupg2/gpg-preset-passphrase --preset "$KEY_GRIP" || \
-          echo "$GPG_PASSPHRASE" | /usr/lib/gnupg/gpg-preset-passphrase --preset "$KEY_GRIP"
+          # Locate gpg-preset-passphrase (path differs across ubuntu versions)
+          PRESET_BIN=$(command -v gpg-preset-passphrase 2>/dev/null || \
+                       ls /usr/lib/gnupg2/gpg-preset-passphrase \
+                          /usr/lib/gnupg/gpg-preset-passphrase 2>/dev/null | head -1)
+          # Grab keygrip of the primary signing subkey
+          KEY_GRIP=$(gpg --with-keygrip --list-secret-keys --with-colons \
+                       | awk -F: '/^grp/{print $10; exit}')
+          echo "KEY_GRIP=$KEY_GRIP"
+          # Cache passphrase in the running agent
+          echo "$GPG_PASSPHRASE" | "$PRESET_BIN" --preset "$KEY_GRIP"
           cd apt-repo
           reprepro includedeb stable ../nexfetch_${{ steps.version.outputs.version }}_amd64.deb
 
