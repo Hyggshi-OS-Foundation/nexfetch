@@ -392,11 +392,12 @@ int logo_load(const char *distro_id,
     char path[512];
     const char *distro = distro_id && distro_id[0] ? distro_id : "tux";
 
-    /* Try local logos/ first, then system-wide /usr/share/nexfetch/logos/ */
-    snprintf(path, sizeof(path), "logos/%s.txt", distro);
+    /* Try system-wide /usr/share/nexfetch/logos/ first (packaged install),
+     * then fall back to local logos/ (source tree / dev run). */
+    snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s.txt", distro);
     int n = load_txt(path, logo_lines);
     if (n <= 0) {
-        snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s.txt", distro);
+        snprintf(path, sizeof(path), "logos/%s.txt", distro);
         n = load_txt(path, logo_lines);
     }
     if (n > 0) return n;
@@ -409,17 +410,15 @@ int logo_load(const char *distro_id,
      *     Windows or macOS run should never look like Linux). Fall back to
      *     nexfetch's own project logo instead. */
     if (strcmp(distro, "macos") == 0 || strcmp(distro, "windows") == 0) {
-        n = load_txt("logos/nexfetch.txt", logo_lines);
-        if (n <= 0) {
-            n = load_txt("/usr/share/nexfetch/logos/nexfetch.txt", logo_lines);
-        }
+        n = load_txt("/usr/share/nexfetch/logos/nexfetch.txt", logo_lines);
+        if (n <= 0) n = load_txt("logos/nexfetch.txt", logo_lines);
         if (n > 0) return n;
     } else if (strcmp(distro, "tux") != 0) {
-        n = load_txt("logos/tux.txt", logo_lines);
-        if (n <= 0) {
-            n = load_txt("/usr/share/nexfetch/logos/tux.txt", logo_lines);
-        }
+        n = load_txt("/usr/share/nexfetch/logos/tux.txt", logo_lines);
+        if (n <= 0) n = load_txt("logos/tux.txt", logo_lines);
         if (n > 0) return n;
+    } else {
+        /* distro == "tux": already failed above, nothing more to try */
     }
 
     return 0;

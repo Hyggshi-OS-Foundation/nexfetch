@@ -167,6 +167,8 @@ void module_manager_load_from_dirs(void) {
         snprintf(user_mod_dir, sizeof(user_mod_dir), "%s/modules", user_dir);
         module_manager_scan_and_load(user_mod_dir);
     }
+    /* System-wide plugin directories (checked in priority order) */
+    module_manager_scan_and_load("/usr/share/nexfetch/plugins");
     module_manager_scan_and_load("/usr/lib/nexfetch/modules");
 }
 

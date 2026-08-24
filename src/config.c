@@ -189,17 +189,20 @@ void config_init(void) {
         } else {
             int copied = 0;
 
-            /* 1. Running from the source tree / release folder, which ships a
-             *    canonical config.json next to the binary. */
-            if (util_copy_file("config/config.json", user_cfg) == 0) copied = 1;
+            /* 1. Installed via package: prefer the system-wide data directory
+             *    so a packaged install always wins on the very first run. */
+            if (util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) == 0)
+                copied = 1;
 
-            /* 2. Installed via package: system-wide locations. */
+            /* 2. Other system-wide location (/etc override). */
             if (!copied && util_copy_file("/etc/nexfetch/config.json", user_cfg) == 0)
                 copied = 1;
-            if (!copied && util_copy_file("/usr/share/nexfetch/config/config.json", user_cfg) == 0)
-                copied = 1;
 
-            /* 3. None of the above (freely downloaded binary placed anywhere):
+            /* 3. Running from the source tree / release folder, which ships a
+             *    canonical config.json next to the binary. */
+            if (!copied && util_copy_file("config/config.json", user_cfg) == 0) copied = 1;
+
+            /* 4. None of the above (freely downloaded binary placed anywhere):
              *    write the bundled canonical default so the first run of a
              *    fresh download is always fully configured. */
             if (!copied) {
@@ -218,13 +221,14 @@ void config_init(void) {
         }
     }
 
-    /* Fallback search order if user config couldn't be loaded */
+    /* Fallback search order if user config couldn't be loaded.
+     * /usr/share/nexfetch is checked first to match the first-run copy order. */
     if (!loaded) {
-        if (util_read_file_content("config/config.json", buf, sizeof(buf))) {
+        if (util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf))) {
             loaded = 1;
         } else if (util_read_file_content("/etc/nexfetch/config.json", buf, sizeof(buf))) {
             loaded = 1;
-        } else if (util_read_file_content("/usr/share/nexfetch/config/config.json", buf, sizeof(buf))) {
+        } else if (util_read_file_content("config/config.json", buf, sizeof(buf))) {
             loaded = 1;
         }
     }
