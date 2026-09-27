@@ -3,9 +3,12 @@
 #include "platform.h"
 #include <stdio.h>
 
-void platform_get_os(char *out, size_t size, char *distro_id, size_t distro_id_size) {
+void platform_get_os(char *out, size_t size,
+                      char *distro_id, size_t distro_id_size,
+                      char *distro_id_like, size_t distro_id_like_size) {
     snprintf(out, size, "Windows");
     if (distro_id) snprintf(distro_id, distro_id_size, "windows");
+    if (distro_id_like && distro_id_like_size > 0) distro_id_like[0] = '\0';
 }
 void platform_get_kernel(char *out, size_t size) { snprintf(out, size, "NT Kernel"); }
 void platform_get_host(char *out, size_t size) { snprintf(out, size, "Windows PC"); }

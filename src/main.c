@@ -24,7 +24,7 @@
 #endif
 
 extern void config_init(void);
-extern int  logo_load(const char *distro_id, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
+extern int  logo_load(const char *distro_id, const char *distro_id_like, char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]);
 extern void logo_gif_animate(const char *path, int logo_width, int logo_height, int duration_secs, int fps);
 extern size_t ansi_visible_length(const char *str);
 
@@ -95,6 +95,7 @@ static void *module_worker_runner(void *arg) {
 
 typedef struct {
     const char *distro_id;
+    const char *distro_id_like;
     char (*lines)[MAX_LOGO_LINE_LEN];
     int count;
     size_t max_width;
@@ -103,7 +104,7 @@ typedef struct {
 static void *logo_load_runner(void *arg) {
     LogoLoadTask *t = (LogoLoadTask *)arg;
     if (!t || !t->lines) return NULL;
-    t->count = logo_load(t->distro_id, t->lines);
+    t->count = logo_load(t->distro_id, t->distro_id_like, t->lines);
     t->max_width = 0;
     for (int i = 0; i < t->count; i++) {
         size_t w = ansi_visible_length(t->lines[i]);
@@ -470,6 +471,7 @@ int main(int argc, char *argv[]) {
 #ifndef _WIN32
     LogoLoadTask logo_task = {
         .distro_id = g_config.distro_id,
+        .distro_id_like = g_config.distro_id_like,
         .lines = logo_lines,
         .count = 0,
         .max_width = 0
@@ -483,7 +485,7 @@ int main(int argc, char *argv[]) {
     }
 #else
     if (g_config.show_logo) {
-        logo_count = logo_load(g_config.distro_id, logo_lines);
+        logo_count = logo_load(g_config.distro_id, g_config.distro_id_like, logo_lines);
         for (int i = 0; i < logo_count; i++) {
             size_t w = ansi_visible_length(logo_lines[i]);
             if (w > max_logo_width) max_logo_width = w;

@@ -17,6 +17,7 @@ NexfetchConfig g_config = {
     .logo_animate           = 0,
     .logo_animate_duration  = 0,
     .distro_id              = "tux",
+    .distro_id_like         = "",
     .color_blocks           = 1,
     .theme                  = "boxed",
     .background_image_path  = "",

@@ -5,7 +5,7 @@
 #include "platform.h"
 #include "util.h"
 
-#define NEXFETCH_VERSION "1.1.6"
+#define NEXFETCH_VERSION "1.2.0"
 #define MAX_MODULES 48
 #define MAX_PLUGINS 16
 #define MAX_VAL_LEN 512
@@ -34,7 +34,8 @@ typedef struct NexfetchConfig {
     int  logo_animate_duration;        /* seconds to animate; 0 = loop until Ctrl+C */
     int  logo_fps;                       /* animation FPS: 30, 60, etc. (0 = default 60) */
     int  logo_border;                      /* 1 = show border, 0 = no border (default) */
-    char distro_id[64];
+    char distro_id[64];         /* ID field from /etc/os-release (primary key into the logo database) */
+    char distro_id_like[256];   /* ID_LIKE field, space-separated — fallback chain only, never overrides ID */
     int color_blocks;
     char theme[64];                    /* active presentation theme: "boxed", "classic", "modern" */
     char background_image_path[512];   /* path to background image rendered as full-terminal ANSI art */

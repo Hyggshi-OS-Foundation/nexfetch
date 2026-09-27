@@ -3,7 +3,13 @@
 
 #include <stddef.h>
 
-void platform_get_os(char *out, size_t size, char *distro_id, size_t distro_id_size);
+/* distro_id      <- ID field of /etc/os-release            (e.g. "hyggshi", "ubuntu")
+ * distro_id_like <- ID_LIKE field, verbatim, space-separated (e.g. "debian", "ubuntu debian")
+ *                    Fallback-only: the logo database must try distro_id first and
+ *                    must never substitute distro_id_like for it. */
+void platform_get_os(char *out, size_t size,
+                      char *distro_id, size_t distro_id_size,
+                      char *distro_id_like, size_t distro_id_like_size);
 void platform_get_kernel(char *out, size_t size);
 void platform_get_host(char *out, size_t size);
 void platform_get_uptime(char *out, size_t size);

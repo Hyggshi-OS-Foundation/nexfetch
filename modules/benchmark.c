@@ -9,7 +9,7 @@
 #endif
 
 extern void config_init(void);
-extern int  logo_load(const char *, char (*)[MAX_LOGO_LINE_LEN]);
+extern int  logo_load(const char *, const char *, char (*)[MAX_LOGO_LINE_LEN]);
 
 #ifndef _WIN32
 static double time_diff_ms(struct timespec *start, struct timespec *end) {
@@ -105,7 +105,7 @@ void benchmark_run(int iterations, BenchmarkResult *result) {
         clock_gettime(CLOCK_MONOTONIC, &t_start);
         char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN];
         memset(logo_lines, 0, sizeof(logo_lines));
-        logo_load("unknown", logo_lines);
+        logo_load("unknown", "", logo_lines);
         clock_gettime(CLOCK_MONOTONIC, &t_end);
         logo_times[iter] = time_diff_ms(&t_start, &t_end);
 

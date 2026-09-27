@@ -10,6 +10,7 @@
 #else
 #include <process.h>  /* _getpid() */
 #define getpid _getpid
+#define strtok_r strtok_s
 #endif
 
 extern size_t ansi_visible_length(const char *str);
@@ -343,16 +344,121 @@ static int load_video(const char *path, int logo_width,
     return n;
 }
 
+/* -------------------------------------------------------------------------
+ * Logo database
+ *
+ * Pipeline (nexfetch 1.2.0):
+ *
+ *   /etc/os-release
+ *         |
+ *     parse ID  (+ ID_LIKE, kept separate)
+ *         |
+ *     logo database   <-- this section
+ *         |
+ *   read remaining os-release fields (module_detect_os, unchanged)
+ *         |
+ *       render
+ *
+ * The database has two tiers, tried in order for a given id:
+ *
+ *   1. Convention lookup: logos/<id>.txt. This is the ONLY thing a new
+ *      distro needs -- drop a file named after its os-release ID into
+ *      logos/ and it is picked up automatically. No code changes, no
+ *      new if/else branch.
+ *
+ *   2. Alias table: a plain data table for the handful of logo files
+ *      that predate the <id>.txt convention (mixed case, suffixes,
+ *      etc.) and haven't been renamed. Adding an entry here is a single
+ *      data row, not new branching logic.
+ *
+ * ID_LIKE is consulted only after BOTH tiers miss for the real ID, by
+ * walking its space-separated tokens through the same two tiers. It is
+ * a fallback chain and must never be tried before, or instead of, ID.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    const char *id;       /* os-release ID this alias applies to */
+    const char *filename; /* actual file under logos/ */
+} LogoAlias;
+
+static const LogoAlias LOGO_ALIASES[] = {
+    { "hyggshi",     "hyggshi_OS.txt"       },
+    { "nixos",       "NixOS.txt"            },
+    { "manjaro",     "Manjaro.txt"          },
+    { "zorin",       "Zorin.txt"            },
+    { "cachyos",     "CachyOS.txt"          },
+    { "bazzite",     "Bazzite_Logo.txt"     },
+    { "caramos",     "CaramOS.txt"          },
+    { "lubuntu",     "Lubuntu.txt"          },
+    { "gentoo",      "Gentoo.txt"           },
+    { "slax",        "Slax.txt"             },
+    { "endeavouros", "endeavouros-linux.txt"},
+    { "xubuntu",     "xubuntu-linux.txt"    },
+    { "linuxmint",   "linux_mint.txt"       },
+    { "void",        "void-linux.txt"       },
+};
+#define LOGO_ALIAS_COUNT (sizeof(LOGO_ALIASES) / sizeof(LOGO_ALIASES[0]))
+
+/* Try to load a logo for one candidate id: convention path first,
+ * then the alias table. Returns line count, or 0 if nothing matched. */
+static int logo_try_id(const char *id,
+                       char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
+    if (!id || !id[0]) return 0;
+    char path[512];
+
+    /* Tier 1: convention -- logos/<id>.txt (system, then local tree). */
+    snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s.txt", id);
+    int n = load_txt(path, logo_lines);
+    if (n <= 0) {
+        snprintf(path, sizeof(path), "logos/%s.txt", id);
+        n = load_txt(path, logo_lines);
+    }
+    if (n > 0) return n;
+
+    /* Tier 2: alias table for legacy/irregular filenames. */
+    for (size_t i = 0; i < LOGO_ALIAS_COUNT; i++) {
+        if (strcmp(LOGO_ALIASES[i].id, id) != 0) continue;
+
+        snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s", LOGO_ALIASES[i].filename);
+        n = load_txt(path, logo_lines);
+        if (n <= 0) {
+            snprintf(path, sizeof(path), "logos/%s", LOGO_ALIASES[i].filename);
+            n = load_txt(path, logo_lines);
+        }
+        if (n > 0) return n;
+        break; /* id only ever has one alias row */
+    }
+
+    return 0;
+}
+
+/* Walk a space-separated ID_LIKE list, trying each token via logo_try_id().
+ * Fallback only -- caller must have already tried the real ID first. */
+static int logo_try_id_like(const char *id_like,
+                            char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
+    if (!id_like || !id_like[0]) return 0;
+
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", id_like);
+
+    char *saveptr = NULL;
+    for (char *tok = strtok_r(buf, " ", &saveptr); tok; tok = strtok_r(NULL, " ", &saveptr)) {
+        int n = logo_try_id(tok, logo_lines);
+        if (n > 0) return n;
+    }
+    return 0;
+}
+
 /*
  * Public entry point.
  * Priority:
  *   1. config.json "logo" path (image or txt)
  *   2. --logo CLI flag  (already stored in g_config.custom_logo_path)
- *   3. logos/<distro_id>.txt
- *   4. Fallback: logos/tux.txt for unmatched Linux distros,
+ *   3. logo database keyed on ID          (logo_try_id)
+ *   4. logo database keyed on ID_LIKE      (logo_try_id_like -- fallback only)
+ *   5. Fallback: logos/tux.txt for unmatched Linux distros,
  *      logos/nexfetch.txt for unmatched non-Linux platforms (macOS, Windows)
  */
-int logo_load(const char *distro_id,
+int logo_load(const char *distro_id, const char *distro_id_like,
               char logo_lines[MAX_LOGO_LINES][MAX_LOGO_LINE_LEN]) {
 
     /* --- Custom logo from config or CLI flag -------------------------------- */
@@ -388,18 +494,17 @@ int logo_load(const char *distro_id,
         }
     }
 
-    /* --- Distro logo from logos/ directory --------------------------------- */
-    char path[512];
+    /* --- Distro logo from the logo database --------------------------------- */
     const char *distro = distro_id && distro_id[0] ? distro_id : "tux";
 
-    /* Try system-wide /usr/share/nexfetch/logos/ first (packaged install),
-     * then fall back to local logos/ (source tree / dev run). */
-    snprintf(path, sizeof(path), "/usr/share/nexfetch/logos/%s.txt", distro);
-    int n = load_txt(path, logo_lines);
-    if (n <= 0) {
-        snprintf(path, sizeof(path), "logos/%s.txt", distro);
-        n = load_txt(path, logo_lines);
-    }
+    /* 1. Real ID first, always. */
+    int n = logo_try_id(distro, logo_lines);
+    if (n > 0) return n;
+
+    /* 2. ID_LIKE only as a fallback when the real ID has no logo of its own
+     *    (e.g. an unknown Ubuntu/Debian derivative can still show the
+     *    Ubuntu or Debian logo instead of falling straight to Tux). */
+    n = logo_try_id_like(distro_id_like, logo_lines);
     if (n > 0) return n;
 
     /* Fallback:
